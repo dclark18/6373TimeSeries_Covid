@@ -1,0 +1,105 @@
+---
+title: "Covid19_project"
+author: "Daniel Clark"
+date: "7/17/2020"
+output: html_document
+---
+
+
+```{r library}
+library(ggplot2)
+library(tswge)
+library(ggplot2)
+library(ggthemes)
+library(forecast)
+library(tseries)
+library(lubridate)
+library(datetime)
+library(caret)
+library(corrplot)
+library(DMwR)
+library(Hmisc)
+library(ROCR)
+library(stringr)
+library(RVAideMemoire)
+#install.packages("plotly")
+library(plotly)
+#install.packages('TSstudio')
+library(TSstudio)
+library(doParallel)
+registerDoParallel(cores=16)
+library(nnfor)
+library(vars)
+```
+
+
+#### Data Load
+```{r setup, include=TRUE}
+covid_daily = read.csv('https://raw.githubusercontent.com/dclark18/6373TimeSeries_Covid/master/time_series_covid19_confirmed_USAZ_forproject.csv')
+
+head(covid_daily)
+```
+
+#Exploratory data analysis
+```{r, plots}
+plotts.sample.wge(covid_daily$US_Net_Cases)
+plotts.sample.wge(covid_daily$AZ_Net_Cases)
+plotts.sample.wge(covid_daily$US_Net_Deaths)
+plotts.sample.wge(covid_daily$AZ_Deaths_Net)
+```
+
+One intial finding is that I'm seeing there's a weekly spike on all datapoints, as indicated by the respective spectral densities being at roughly 0.14. This might be due to the fact that cases are reported more often on mondays, or people visit the hospital more often on a certain day of the week than others. 
+
+```{r deaths and cases}
+fig1 <- plot_ly(covid_daily, x = ~(covid_daily$US_Net_Cases / 10), y = ~covid_daily$Date, name = "US Net Cases (scaled by 10)", type = 'scatter',
+               mode = "markers", marker = list(color = "pink"))
+fig1 <- fig1 %>% add_trace(x = ~covid_daily$US_Net_Deaths, y = ~covid_daily$Date, name = "US Net Deaths",type = 'scatter',
+                         mode = "markers", marker = list(color = "blue"))
+fig1 <- fig1 %>% layout(
+  title = "US Cases / Deaths",
+  xaxis = list(title = "Number of Cases/Deaths"),
+  margin = list(l = 100)
+)
+
+fig2 <- plot_ly(covid_daily, x = ~(covid_daily$AZ_Net_Cases / 10), y = ~covid_daily$Date, name = "AZ Net Cases (scaled by 10)", type = 'scatter',
+               mode = "markers", marker = list(color = "pink"))
+fig2 <- fig2 %>% add_trace(x = ~covid_daily$AZ_Deaths_Net, y = ~covid_daily$Date, name = "AZ Net Deaths",type = 'scatter',
+                         mode = "markers", marker = list(color = "blue"))
+fig2 <- fig2 %>% layout(
+  title = "AZ Cases / Deaths",
+  xaxis = list(title = "Number of Cases/Deaths"),
+  margin = list(l = 100)
+)
+
+fig1
+fig2
+```
+
+
+## Weekday Review
+
+```{r year review}
+fig3 <- plot_ly(covid_daily, x = ~(covid_daily$US_Net_Cases / 10), y = ~covid_daily$Weekday, name = "US Net Cases (scaled by 10)", type = 'bar',
+                mode = "markers", marker = list(color = "pink"))
+fig3 <- fig3 %>% add_trace(x = ~covid_daily$US_Net_Deaths, y = ~covid_daily$Weekday, name = "US Net Deaths",type = 'bar',
+                           mode = "markers", marker = list(color = "blue"))
+fig3 <- fig3 %>% layout(
+  title = "US Covid Cases by Day",
+  xaxis = list(title = "Number of Cases"),
+  margin = list(l = 100)
+)
+
+fig4 <- plot_ly(covid_daily, x = ~(covid_daily$AZ_Net_Cases / 10), y = ~covid_daily$Weekday, name = "AZ Net Cases (scaled by 10)", type = 'bar',
+                mode = "markers", marker = list(color = "pink"))
+fig4 <- fig4 %>% add_trace(x = ~covid_daily$AZ_Deaths_Net, y = ~covid_daily$Weekday, name = "AZ Net Deaths",type = 'bar',
+                           mode = "markers", marker = list(color = "blue"))
+fig4 <- fig4 %>% layout(
+  title = "AZ Covid Cases by Day",
+  xaxis = list(title = "Number of Cases"),
+  margin = list(l = 100)
+)
+
+fig3
+fig4
+
+```
