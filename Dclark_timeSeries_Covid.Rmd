@@ -103,3 +103,74 @@ fig3
 fig4
 
 ```
+
+
+
+```{r barchart}
+fig5 <- plot_ly(covid_daily, x = ~covid_daily$Date, y = ~(covid_daily$US_Net_Cases - covid_daily$AZ_Net_Cases), type = 'bar', name = 'US Net Cases')
+fig5 <- fig5 %>% add_trace(y = ~covid_daily$AZ_Net_Cases, name = 'AZ Net cases')
+fig5 <- fig5 %>% layout(yaxis = list(title = 'Count'), barmode = 'stack')
+
+fig5
+
+
+
+fig6 <- plot_ly(covid_daily, x = ~covid_daily$Date, y = ~(covid_daily$US_Net_Deaths - covid_daily$AZ_Deaths_Net), type = 'bar', name = 'US Net Deaths')
+fig6 <- fig6 %>% add_trace(y = ~covid_daily$AZ_Deaths_Net, name = 'AZ Net Deaths')
+fig6 <- fig6 %>% layout(yaxis = list(title = 'Count'), barmode = 'stack')
+
+fig6
+```
+
+
+
+
+```{r cases}
+fig7 <- plot_ly(data = covid_daily, x = ~covid_daily$US_Net_Cases, y = ~covid_daily$US_Net_Deaths,
+               marker = list(size = 10,
+                             color = ~year,
+                             line = list(color = ~year,
+                                         width = 2)))
+fig7 <- fig7 %>% layout(title = 'Covid Cases with Death',
+                      yaxis = list(zeroline = FALSE),
+                      xaxis = list(zeroline = FALSE))
+
+fig7
+
+fig8 <- plot_ly(data = covid_daily, x = ~covid_daily$AZ_Net_Cases, y = ~covid_daily$AZ_Deaths_Net,
+               marker = list(size = 10,
+                             color = ~year,
+                             line = list(color = ~year,
+                                         width = 2)))
+fig8 <- fig8 %>% layout(title = 'AZ Covid Cases with Death',
+                      yaxis = list(zeroline = FALSE),
+                      xaxis = list(zeroline = FALSE))
+
+fig8
+```
+
+
+
+```{r load gavins data}
+az = read.csv("https://raw.githubusercontent.com/dclark18/6373TimeSeries_Covid/master/az.csv")
+head(az)
+```
+```{r tests}
+fig9 <- plot_ly(az, x = az$Count, y = ~az$daily_negative, type = 'bar', name = 'AZ Negative Cases')
+fig9 <- fig9 %>% add_trace(y = ~az$daily_cases, name = 'AZ Positive cases')
+fig9 <- fig9 %>% layout(yaxis = list(title = 'Count'), barmode = 'stack')
+
+fig9
+
+
+fig10 <- plot_ly(az, x = az$Count, y = ~az$daily_hospitalized, type = 'bar', name = 'AZ Hospitalizations')
+fig10 <- fig10 %>% add_trace(y = ~az$daily_cases, name = 'AZ  Cases')
+fig10 <- fig10 %>% layout(yaxis = list(title = 'Count'), barmode = 'stack')
+
+fig10
+
+fig11 <- plot_ly(az, x = az$Count, y = ~az$posPer, type = 'bar', name = 'AZ Positve Percentage')
+fig11 <- fig11 %>% layout(yaxis = list(title = 'Count'), barmode = 'stack')
+
+fig11
+```
