@@ -1,4 +1,4 @@
-,Count,Date,NewTests,Cases,daily_cases,Negative,daily_negative,Pending,Hospitalized,daily_hospitalized,Deaths,Daily Deaths,Total,caseDif,posPer
+,Count,Date,NewTests,Cases,daily_cases,Negative,daily_negative,Pending,Hospitalized,daily_hospitalized,Deaths,Daily_Deaths,Total,caseDif,posPer
 1,1,Wed Mar 4 2020,0,2,2,27,27,5,4,4,0,0,29,NA,NA
 2,2,Thu Mar 5 2020,1,2,0,28,1,6,5,1,0,0,30,0,0
 3,3,Fri Mar 6 2020,6,3,1,33,5,15,6,1,0,0,36,1,16.66666667
