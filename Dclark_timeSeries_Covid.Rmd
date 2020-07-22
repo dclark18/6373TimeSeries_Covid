@@ -36,19 +36,325 @@ library(vars)
 #### Data Load
 ```{r setup, include=TRUE}
 covid_daily = read.csv('https://raw.githubusercontent.com/dclark18/6373TimeSeries_Covid/master/time_series_covid19_confirmed_USAZ_forproject.csv')
+usdaily = read.csv('https://raw.githubusercontent.com/dclark18/6373TimeSeries_Covid/master/dailyUS.csv')
 
 head(covid_daily)
+head(usdaily)
+
+az = read.csv("https://raw.githubusercontent.com/dclark18/6373TimeSeries_Covid/master/az.csv")
+head(az)
 ```
+
+The data above (for usdaily) includes some detailed variables in the US data for covid that includes information on pending tests, positive tests, negative tests, deaths, hospitalizations and test results increase. This will allow us to capture data on the positive test rate in the midst of the pandemic to capture the measures moving forward. 
+
+The data for Arizona's state specific reporting (az) includes similar metrics where we get the daily increase of positive, negative, pedning tests, as well as hospitalizations, cases and deaths. We also have positive percentage reporting specifically for Arizona as well. 
+
+The data above (coviddaily) appears to come from the John's Hopkins research lab github respository. The data starts on 1/22 and runs through July 16. It captures both US and AZ data on the following variables:
+* US_Total_Cases - the cumulative daily total of positive cases across the US
+* US_Net_Cases - the daily new number of cases found each day
+* US_Cases_Percent - the percent growth of new US cases each day
+* US_Deaths_Total - The cumulative total of US deaths through that day
+* US_Net_Deaths - The daily new number of deaths in the US.
+
+So that we can have a US positive test rate to measure against, see below for the calculation we will run.
+
+```{r positive test percentage}
+usdaily$positivetestrate = usdaily$positiveIncrease / usdaily$totalTestResultsIncrease * 100
+
+head(usdaily)
+```
+
+The reason we are interested in positive test rate is that it accounts for the change in the number of test that we see  over time so that we get a clearer view of how often people are getting positive tests throughout the course of the study. With that said, there's still flaws in the measure that we will have to account for, namely early on in the realization, we are finding issues with regards to the volume of tests being so small that it inflates our positive test rate. 
 
 #Exploratory data analysis
-```{r, plots}
-plotts.sample.wge(covid_daily$US_Net_Cases)
-plotts.sample.wge(covid_daily$AZ_Net_Cases)
-plotts.sample.wge(covid_daily$US_Net_Deaths)
-plotts.sample.wge(covid_daily$AZ_Deaths_Net)
+
+## Us Data
+
+```{r, summary}
+summary(usdaily)
 ```
 
-One intial finding is that I'm seeing there's a weekly spike on all datapoints, as indicated by the respective spectral densities being at roughly 0.14. This might be due to the fact that cases are reported more often on mondays, or people visit the hospital more often on a certain day of the week than others. 
+Running a quick dataset, you will notice that the earliest data in our reporting period is March 4, which we chose because it is in the middle of the United states capturing nearly 2000 tests per day, which we feel is a significant enough amount for us to not overly skew our positive test rate. 
+
+Additionally, we can ee we are having some pretty alarming stats with regards to the per day numbers. With the United states getting over 77,000 positive cases in a day as a max as well as a max of 2,700 deaths that occured during a day during the pandemic. 
+
+```{r, plots}
+#plotts.sample.wge(covid_daily$US_Net_Cases)
+#plotts.sample.wge(covid_daily$AZ_Net_Cases)
+#plotts.sample.wge(covid_daily$US_Net_Deaths)
+#plotts.sample.wge(covid_daily$AZ_Deaths_Net)
+
+plotts.sample.wge(usdaily$deathIncrease)
+plotts.sample.wge(usdaily$hospitalizedIncrease)
+plotts.sample.wge(usdaily$negativeIncrease)
+plotts.sample.wge(usdaily$positiveIncrease)
+plotts.sample.wge(usdaily$positivetestrate)
+
+```
+
+Looking at some of the key realizations that came out of our US daily dataset (deaths, hospitalizations, positive test results, negative test results and positive test percentage).
+
+With regards to reporting upon stationarity of our 5 graphs of interest, see below:
+
+* Consistent mean - All four graphs indicate a serious change in mean since the amount of testing ramped up heavily over the span of the time series realization. This acts as evidence against stationarity with a serious trend to account for in our reporting. 
+
+* Consistent Variance - In general we saw a lack of consistency across all 4 values with regards to the deaths and cases data in the US and AZ. 
+
+* ACFs don't depend on time - while most of our autocorrelations generally damp, There does seem to be some oscillations occuring amont the AZ and US deaths and AZ cases that were found. Which is evidence against stationarity. 
+
+The key point that comes into play with all of these variables is the fact that the number of tests significantly increased over time in both the US (and AZ) which will create a signifiant change in mean and variance over time. In turn we will also see the ACFs change over time as well. 
+
+```{r acfs and spectral densities}
+plotts.sample.wge(usdaily$deathIncrease)
+plotts.sample.wge(usdaily$hospitalizedIncrease)
+plotts.sample.wge(usdaily$negativeIncrease)
+plotts.sample.wge(usdaily$positiveIncrease)
+plotts.sample.wge(usdaily$positivetestrate)
+
+ccf(usdaily$deathIncrease, usdaily$hospitalizedIncrease)
+ccf(usdaily$deathIncrease, usdaily$negativeIncrease)
+ccf(usdaily$deathIncrease, usdaily$positiveIncrease)
+ccf(usdaily$deathIncrease, usdaily$positivetestrate)
+ccf(usdaily$positiveIncrease, usdaily$hospitalizedIncrease)
+```
+
+Specifically reviewing the acfs and spectral densities, in general, we see a lagged autocorrelation with a few cases where we had some slight oscillation, particularly with deaths and hospitalizations. For spectral desnities, each of our 5 realizations indicated a bit of a spike at roughly 0.14, particularly with the deaths dataset. This would suggest we have a weekly seasonality with our reporting structure which suggests that hospitals report covid findings more often on a specific day of the week. 
+
+Looking at the cross correlations between our 5 variables and deaths, we can see that there's some interesting findings that we can keep in mind for further study. Particularly comparing deaths to hospitalizations, we are seeing that there's a positive lag of 7 with respect to hispitals, which suggests that we typically see an increase in deaths 6 days after increases in hospitalizations. Additionally, we see there's a similar lag with positive cases.
+
+So on the last figure, we see there's a two day lag with hospitalization spikes and positive results spikes. 
+
+```{r deaths and cases}
+fig1 <- plot_ly(usdaily, x = ~(usdaily$positiveIncrease / 10), y = ~usdaily$date, name = "US Net Cases (scaled by 10)", type = 'scatter',
+               mode = "markers", marker = list(color = "pink"))
+fig1 <- fig1 %>% add_trace(x = ~usdaily$deathIncrease, y = ~usdaily$date, name = "US Net Deaths per day",type = 'scatter',
+                         mode = "markers", marker = list(color = "blue"))
+fig1 <- fig1 %>% layout(
+  title = "US Cases / Deaths",
+  xaxis = list(title = "Number of Cases/Deaths"),
+  margin = list(l = 100)
+)
+
+fig1
+
+fig2 <- plot_ly(usdaily, x = ~(usdaily$hospitalizedIncrease / 10), y = ~usdaily$date, name = "US Net Hospitalizations (scaled by 10)", type = 'scatter',
+               mode = "markers", marker = list(color = "pink"))
+fig2 <- fig2 %>% add_trace(x = ~usdaily$deathIncrease, y = ~usdaily$date, name = "US Net Deaths per day",type = 'scatter',
+                         mode = "markers", marker = list(color = "blue"))
+fig2 <- fig2 %>% layout(
+  title = "US Cases / Deaths",
+  xaxis = list(title = "Number of Cases/Deaths"),
+  margin = list(l = 100)
+)
+
+fig2
+```
+
+
+## Weekday Review
+
+```{r year review}
+fig3 <- plot_ly(covid_daily, x = ~(covid_daily$US_Net_Cases / 10), y = ~covid_daily$Weekday, name = "US Net Cases (scaled by 10)", type = 'bar',
+                mode = "markers", marker = list(color = "pink"))
+fig3 <- fig3 %>% add_trace(x = ~covid_daily$US_Net_Deaths, y = ~covid_daily$Weekday, name = "US Net Deaths",type = 'bar',
+                           mode = "markers", marker = list(color = "blue"))
+fig3 <- fig3 %>% layout(
+  title = "US Covid Cases by Day",
+  xaxis = list(title = "Number of Cases"),
+  margin = list(l = 100)
+)
+
+fig4 <- plot_ly(covid_daily, x = ~(covid_daily$AZ_Net_Cases / 10), y = ~covid_daily$Weekday, name = "AZ Net Cases (scaled by 10)", type = 'bar',
+                mode = "markers", marker = list(color = "pink"))
+fig4 <- fig4 %>% add_trace(x = ~covid_daily$AZ_Deaths_Net, y = ~covid_daily$Weekday, name = "AZ Net Deaths",type = 'bar',
+                           mode = "markers", marker = list(color = "blue"))
+fig4 <- fig4 %>% layout(
+  title = "AZ Covid Cases by Day",
+  xaxis = list(title = "Number of Cases"),
+  margin = list(l = 100)
+)
+
+fig3
+fig4
+
+```
+
+
+
+```{r barchart}
+fig5 <- plot_ly(usdaily, x = ~usdaily$date[1:136], y = ~(usdaily$positiveIncrease[1:136] - az$daily_cases), type = 'bar', name = 'US Net Cases')
+fig5 <- fig5 %>% add_trace(y = ~az$daily_cases, name = 'AZ Net cases')
+fig5 <- fig5 %>% layout(yaxis = list(title = 'Count'), barmode = 'stack')
+
+fig5
+```
+
+
+
+
+```{r cases}
+fig7 <- plot_ly(data =usdaily, x = ~usdaily$positiveIncrease, y = ~usdaily$deathIncrease,
+               marker = list(size = 10,
+                             color = ~year,
+                             line = list(color = ~year,
+                                         width = 2)))
+fig7 <- fig7 %>% layout(title = 'Covid Cases with Death',
+                      yaxis = list(zeroline = FALSE),
+                      xaxis = list(zeroline = FALSE))
+
+fig7
+
+fig8 <- plot_ly(data = usdaily, x = ~usdaily$hospitalizedIncrease, y = ~usdaily$deathIncrease,
+               marker = list(size = 10,
+                             color = ~year,
+                             line = list(color = ~year,
+                                         width = 2)))
+fig8 <- fig8 %>% layout(title = 'US Hospitalizations with Death',
+                      yaxis = list(zeroline = FALSE),
+                      xaxis = list(zeroline = FALSE))
+
+fig8
+```
+
+
+# AZ data
+
+```{r load gavins data}
+az = read.csv("https://raw.githubusercontent.com/dclark18/6373TimeSeries_Covid/master/az.csv")
+head(az)
+summary(az)
+```
+
+Found from Johns Hopkins research lab, the data above covers the New tests, cases (or positive tests), daily cases, negative tests, pending test results, hospitalizations, deaths and positive percentage. Using the raw data we calculated the daily hospitalizations, daily negatives, and daily cases. The reason being that the raw data consisted of cumulative numbers, meaning the amounts reflected the new total for the entire pandemic. So for better analysis, we decided to just focus on the daily influx of cases, tests and negatives. 
+
+```{r az covid cases}
+plotts.sample.wge(az$NewTests)
+plotts.sample.wge(az$daily_cases)
+plotts.sample.wge(az$daily_hospitalized)
+plotts.sample.wge(az$Daily_Deaths)
+plotts.sample.wge(az$posPer[2:136])
+
+```
+
+Looking specifically at the Arizona data, we have the same similar cases that we saw with the US data with regards to the tests for stationary. Below has more detail:
+
+* Consistent mean - As mentioned before, since we saw a consistent growth in the number of tests administered across Arizona, we saw a greater number of positive tests. Additionally, as the virus spread throughout Arizona, we saw an increase in hospitalizations and deaths. With regards to positive percent, since we started with a few number of tests in March, we saw large jumps in the positive percent over time. 
+* Consistent variability - This is very apparent in the positive percentage breakout as we saw dramatic spikes in the percentage of positive cases, sometimes up to 100% in some days. However this can be due to the scarcity of tests that took place in early March, and possibly related to how the tests were administered. Possibly, people are being tested after they have been hospitalized. For the other stats such as positive cases, deaths, hospitalizations, ect. we see  large spikes in variance in the later months as we are seeing spikes take place as the virus ramps back up in the later months. 
+
+* ACFs do not depend on time - Like with the US data, we see a damped residuals with oscillations, which is evidence against stationarity. 
+
+With reviewing the spectral densitives, we can see some similarities with the US data where we appear to have a weekly seasonality with deaths and hospitalizations with a frequency spike of 0.14.
+
+```{r tests}
+fig9 <- plot_ly(az, x = az$Count, y = ~az$Daily_Deaths, type = 'bar', name = 'AZ Negative Cases')
+fig9 <- fig9 %>% add_trace(y = ~az$daily_cases, name = 'AZ Positive cases')
+fig9 <- fig9 %>% layout(yaxis = list(title = 'Count'), barmode = 'stack')
+
+fig9
+
+
+fig10 <- plot_ly(az, x = az$Count, y = ~az$daily_negative, type = 'bar', name = 'AZ Negative Cases')
+fig10 <- fig10 %>% add_trace(y = ~az$daily_cases, name = 'AZ  Positive Cases')
+fig10 <- fig10 %>% layout(yaxis = list(title = 'Count'), barmode = 'stack')
+
+fig10
+
+
+```
+The positive percentage statistic reflects the percent of tests administered on a daily basis that were found to be positive cases of COVID-19. So ultimately, the formula looks like this: Positive Percentage = Positve cases on a given day / Total tests in the same given day * 100. 
+
+One drawback with reporting upon positive percentage is that it's also a function of the amount of tests administered per day. Since there were roughly 5 tests administered per day in March compared to the thousands administered each day in July, we saw some heavy spikes early on in our reporting period. This means we will need to account for the spikes due to testing volume within our forecast models. 
+
+```{r, cross correlation percentage}
+ccf(az$NewTests, az$daily_cases)
+ccf(az$daily_cases, az$daily_hospitalized)
+ccf(az$daily_hospitalized, az$Daily_Deaths)
+```
+We are not seeing a lag in daily tests and daily hospitalizations, however, we do see two sets of lags between positive cases and hospitalizations. One of which is -7 and the other is 0, which indicates that people may be getting a positive test and going to the hospital a week later, or they were admitted to the hospital with symptoms and got tested to find they have COVID. 
+
+# Fit 2 candidate models
+
+US Deaths (forecast 2 weeks ahead)
+
+```{r US deaths}
+
+plotts.sample.wge(usdaily$deathIncrease) # appears to be a week long seasonality
+death07 = artrans.wge(usdaily$deathIncrease, c(rep(0,6),1))
+acf(death07, )
+plotts.sample.wge(death07)
+aic5.wge(death07) #picks ARMA(2,2) assume stationary
+aic5.wge(death07,type = "bic") #picks ARMA(1,1) 
+ljung.wge(death07) #R Ho
+ljung.wge(death07, K = 48) #R Ho
+m = est.arma.wge(death07, p = 1, q = 1, factor = TRUE)
+fore.arma.wge(death07, p = m$phi, theta = m$theta, n.ahead = 14, plot = TRUE)
+```
+
+Model 2
+```{r forearuma}
+est.death = est.arma.wge(death07, p=1, q=1)
+predsdeathshort = fore.aruma.wge(death07, s = 7, n.ahead = 14)
+plot(predsdeathshort$f, type = "l")
+plot(seq(1,133,1), death07, type = "l",xlim = c(0,146), ylab = "Deaths in the US", main = "14 Day US Covid Death Forecast")
+lines(seq(134,147,1), predsdeathshort$f, type = "l", col = "red")
+```
+
+Rolling window ASE (short term)
+
+```{r rolling window}
+trainingSize = 70
+horizon = 14
+ASEHolder = numeric()
+
+for( i in 1:(133-(trainingSize + horizon) + 1))
+{
+  
+  forecasts = fore.aruma.wge(death07[i:(i+(trainingSize-1))],phi = est.death$phi, theta = est.death$theta, s = 7, d = 0,n.ahead = horizon)
+  
+  ASE = mean((death07[(trainingSize+i):(trainingSize+ i + (horizon) - 1)] - forecasts$f)^2)
+         
+  ASEHolder[i] = ASE
+
+}
+
+ASEHolder
+hist(ASEHolder)
+WindowedASE = mean(ASEHolder)
+
+summary(ASEHolder)
+WindowedASE
+
+```
+
+
+Rolling window ASE (long term)
+
+```{r rolling window}
+trainingSize = 70
+horizon = 14
+ASEHolder2 = numeric()
+
+for( i in 1:(133-(trainingSize + horizon) + 1))
+{
+  
+  forecasts = fore.aruma.wge(death07[i:(i+(trainingSize-1))],phi = est.death$phi, theta = est.death$theta, s = 7, d = 0,n.ahead = horizon)
+  
+  ASE = mean((death07[(trainingSize+i):(trainingSize+ i + (horizon) - 1)] - forecasts$f)^2)
+         
+  ASEHolder[i] = ASE
+
+}
+
+ASEHolder2
+hist(ASEHolder2)
+WindowedASE = mean(ASEHolder2)
+
+summary(ASEHolder2)
+WindowedASE
+
+```
+
+### Appendix
 
 ```{r deaths and cases}
 fig1 <- plot_ly(covid_daily, x = ~(covid_daily$US_Net_Cases / 10), y = ~covid_daily$Date, name = "US Net Cases (scaled by 10)", type = 'scatter',
@@ -147,30 +453,4 @@ fig8 <- fig8 %>% layout(title = 'AZ Covid Cases with Death',
                       xaxis = list(zeroline = FALSE))
 
 fig8
-```
-
-
-
-```{r load gavins data}
-az = read.csv("https://raw.githubusercontent.com/dclark18/6373TimeSeries_Covid/master/az.csv")
-head(az)
-```
-```{r tests}
-fig9 <- plot_ly(az, x = az$Count, y = ~az$daily_negative, type = 'bar', name = 'AZ Negative Cases')
-fig9 <- fig9 %>% add_trace(y = ~az$daily_cases, name = 'AZ Positive cases')
-fig9 <- fig9 %>% layout(yaxis = list(title = 'Count'), barmode = 'stack')
-
-fig9
-
-
-fig10 <- plot_ly(az, x = az$Count, y = ~az$daily_hospitalized, type = 'bar', name = 'AZ Hospitalizations')
-fig10 <- fig10 %>% add_trace(y = ~az$daily_cases, name = 'AZ  Cases')
-fig10 <- fig10 %>% layout(yaxis = list(title = 'Count'), barmode = 'stack')
-
-fig10
-
-fig11 <- plot_ly(az, x = az$Count, y = ~az$posPer, type = 'bar', name = 'AZ Positve Percentage')
-fig11 <- fig11 %>% layout(yaxis = list(title = 'Count'), barmode = 'stack')
-
-fig11
 ```
