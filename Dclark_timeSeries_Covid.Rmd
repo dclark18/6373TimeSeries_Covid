@@ -274,7 +274,7 @@ We are not seeing a lag in daily tests and daily hospitalizations, however, we d
 
 # Fit 2 candidate models
 
-US Deaths (forecast 2 weeks ahead)
+US Deaths (forecast 2 weeks ahead for the short term and 6 weeks ahead for the long term.)
 
 ```{r US deaths}
 
@@ -331,7 +331,7 @@ Rolling window ASE (long term)
 
 ```{r rolling window}
 trainingSize = 70
-horizon = 14
+horizon = 42
 ASEHolder2 = numeric()
 
 for( i in 1:(133-(trainingSize + horizon) + 1))
@@ -339,20 +339,103 @@ for( i in 1:(133-(trainingSize + horizon) + 1))
   
   forecasts = fore.aruma.wge(death07[i:(i+(trainingSize-1))],phi = est.death$phi, theta = est.death$theta, s = 7, d = 0,n.ahead = horizon)
   
-  ASE = mean((death07[(trainingSize+i):(trainingSize+ i + (horizon) - 1)] - forecasts$f)^2)
+  ASE2 = mean((death07[(trainingSize+i):(trainingSize+ i + (horizon) - 1)] - forecasts$f)^2)
          
-  ASEHolder[i] = ASE
+  ASEHolder2[i] = ASE2
 
 }
 
 ASEHolder2
-hist(ASEHolder2)
-WindowedASE = mean(ASEHolder2)
+#hist(ASEHolder2)
+WindowedASE2 = mean(ASEHolder2)
 
 summary(ASEHolder2)
-WindowedASE
+WindowedASE2
 
 ```
+
+AZ Deaths over time
+```{r az deaths ccf}
+casedeathaz = ccf(az$Daily_Deaths, az$daily_cases)
+```
+
+Let's account for a lag of 7 as we are seeing a bit of a spike at that level. We can attempt both to see how each one performs. 
+
+```{r US deaths}
+
+plotts.sample.wge(az$Daily_Deaths) # appears to be a week long seasonality
+azdeath07 = artrans.wge(az$Daily_Deaths, c(rep(0,6),1))
+azdeath07trend = artrans.wge(azdeath07, 1)
+acf(azdeath07trend)
+plotts.sample.wge(azdeath07trend)
+aic5.wge(azdeath07trend) #picks ARMA(5,0) assume stationary
+aic5.wge(azdeath07trend,type = "bic") #picks ARMA(1,1) 
+ljung.wge(azdeath07trend) #FTR Ho
+ljung.wge(azdeath07trend, K = 48) #FTR Ho
+m = est.arma.wge(azdeath07trend, p = 1, q = 1, factor = TRUE)
+fore.arma.wge(azdeath07trend, p = m$phi, theta = m$theta, n.ahead = 14, plot = TRUE)
+```
+
+Model 2 (account for a stationary seasonality)
+
+```{r forearuma}
+est.az.death = est.arma.wge(azdeath07trend, p=1, q=1)
+azpredsdeathshort = fore.aruma.wge(azdeath07trend, s = 7, n.ahead = 14)
+plot(azpredsdeathshort$f, type = "l")
+plot(seq(1,128,1), azdeath07trend, type = "l",xlim = c(0,142), ylab = "Deaths in the US", main = "14 Day AZ Covid Death Forecast")
+lines(seq(129,142,1), azpredsdeathshort$f, type = "l", col = "red")
+```
+
+```{r rolling window}
+trainingSize = 70
+horizon = 14
+ASEHolder3 = numeric()
+
+for( i in 1:(133-(trainingSize + horizon) + 1))
+{
+  
+  forecasts = fore.aruma.wge(azdeath07trend[i:(i+(trainingSize-1))],phi = est.az.death$phi, theta = est.az.death$theta, s = 7, d = 0,n.ahead = horizon)
+  
+  ASE = mean((azdeath07trend[(trainingSize+i):(trainingSize+ i + (horizon) - 1)] - forecasts$f)^2)
+         
+  ASEHolder3[i] = ASE
+
+}
+
+ASEHolder3
+hist(ASEHolder3)
+WindowedASE3 = mean(ASEHolder3)
+
+summary(ASEHolder3)
+WindowedASE3
+
+```
+
+```{r rolling window}
+trainingSize = 70
+horizon = 42
+ASEHolder4 = numeric()
+
+for( i in 1:(133-(trainingSize + horizon) + 1))
+{
+  
+  forecasts = fore.aruma.wge(azdeath07trend[i:(i+(trainingSize-1))],phi = est.az.death$phi, theta = est.az.death$theta, s = 7, d = 0,n.ahead = horizon)
+  
+  ASE = mean((azdeath07trend[(trainingSize+i):(trainingSize+ i + (horizon) - 1)] - forecasts$f)^2)
+         
+  ASEHolder4[i] = ASE
+
+}
+
+ASEHolder4
+hist(ASEHolder4)
+WindowedASE4 = mean(ASEHolder4)
+
+summary(ASEHolder4)
+WindowedASE4
+
+```
+
 
 ### Appendix
 
