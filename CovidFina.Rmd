@@ -1,0 +1,1066 @@
+---
+title: "CovidFinal"
+author: "Daniel Clark"
+date: "7/29/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# File and Library Load
+
+```{r file load}
+library(tswge)
+
+# Read in the Arizona Data
+azData = read.csv('/Users/danielclark/Desktop/SMU/Time_Series/ImportsProject/Project/Github/6373TimeSeries_Covid-master/original_data/AZdaily.csv', header=TRUE)
+# Read in the United States Data
+usData = read.csv('/Users/danielclark/Desktop/SMU/Time_Series/ImportsProject/Project/Github/6373TimeSeries_Covid-master/original_data/USdaily.csv', header=TRUE)
+```
+
+# Data Cleaning
+
+```{r}
+# Sort the data by date
+as2 = azData[order(azData$date),]
+us2 = usData[order(usData$date),]
+
+head(as2)
+head(us2)
+```
+
+
+Plot the US data to make sure it all looks good. 
+
+```{r}
+# Plot of date, just as a QA/QC Check - all looks good.
+plotts.sample.wge(us2$date)
+# Examine some plots of the data, such as the cumulative death rate.
+plotts.sample.wge(us2$death[36:182])
+# Plot the total number of positive cases, negative cases, and the ratio between he two.
+plotts.sample.wge(us2$positive)
+plotts.sample.wge(us2$negative)
+# make a plot of the ratio of negative tests to positive tests. 
+plotts.sample.wge(us2$negative/us2$positive)
+```
+
+Here we can see that the plots for hte realizations on death,positive and negative increase over time. This means that our variables here are cumulative to date and do not reflect the days's total. We will need to focus on the day's total as it will be difficult to forecast the cumulative increase. 
+
+```{r}
+# This plot shows the increase in positive cases over time.  
+plotts.sample.wge(us2$positiveIncrease)
+# This shows the same for negative cases over time.
+plotts.sample.wge(us2$negativeIncrease)
+```
+
+The totalIncrease created by summing the positive and negative increase should be equivalent to the number of tests administered without considering pending cases. 
+
+```{r}
+totalIncrease = us2$positiveIncrease + us2$negativeIncrease
+# This variable (totalTestResultsIncresase) should closely match the totalIncrease 
+plotts.sample.wge(totalIncrease)
+```
+
+The totalIncrease variable shows to match exactly with the totalTestResultsIncrease variable, so now we can have confidence on how that variable was calculated and use it moving forward.
+
+```{r}
+# Here is a graph of increase count in total tests.
+plotts.sample.wge(us2$totalTestResultsIncrease)
+```
+
+Now we are divding the total test by cumulative positive cases.
+
+```{r}
+pp = totalIncrease / us2$positive
+plotts.sample.wge(pp)
+
+plotts.sample.wge(pp[40:140])
+```
+
+Now we are creating the variable posper, which stands for posive percentage, given as decimal percentages.Since our positive percentage varies widely with little data in the first 40 days of the dataset, so we will focus on the data from day 40 to 140. 
+
+
+
+```{r}
+posper = (us2$positiveIncrease[50:140]/us2$totalTestResultsIncrease[50:140])
+plotts.sample.wge(posper)
+```
+The realization of the posper plot shows an decreasing trend over time for approximately the past sixty days of data indicating that positive test results are decreasing relative to the number of administered tests.
+
+Proceed with stationary model being aware that short term stationarity is possibly unlikely.
+
+```{r}
+aic5.wge(posper, p=0:5, q=0:2) # arma(2,2)
+aic5.wge(posper, p=0:5, q=0:2, type='bic') # arma(2,2)
+```
+
+Estimate the model for the p = 2 and q = 2
+
+```{r}
+estPosper22 = est.arma.wge(posper, p=2, q=2)
+mean(posper)
+estPosper22$phi
+estPosper22$theta
+```
+
+Based on our estimation, the final model for positive percentage is:
+
+(1 - 1.96B + 0.97B^2)(X - 0.13) = (1 -1.185a_t + 0.89a_t^2)
+
+Create the Factor tables for the estimated model we created. 
+
+```{r}
+factor.wge(phi=estPosper22$phi)
+```
+
+
+## Forecasting 
+
+Forcasting 10 ahead for both ARMA models.  Both of these will eventually reach the mean of 0.16
+
+```{r}
+fore.arma.wge(posper,phi=estPosper22$phi, theta=estPosper22$theta, n.ahead=10,plot=TRUE)
+```
+
+Calculate the ASE for 10 steps back using the ARMA Models
+
+```{r}
+for22 = fore.arma.wge(posper,phi=estPosper22$phi, theta=estPosper22$theta, n.ahead=10,lastn=TRUE, plot=TRUE)
+ASE22 = mean((posper[(91-10+1):91] - for22$f)^2)
+ASE22
+```
+
+For better confirmation of the performance of the model, we will run a windowed ASE which will test the performance of the model during 10 unit windows throughout the time series of the realization. 
+
+```{r rolling window}
+trainingSize = 70
+horizon = 10
+ASEHolder = numeric()
+
+for( i in 1:(91-(trainingSize + horizon) + 1))
+{
+  
+  forecasts = fore.aruma.wge(posper[i:(i+(trainingSize-1))],phi = estPosper22$phi, theta = estPosper22$theta, s = 0, d = 0,n.ahead = horizon)
+  
+  ASE = mean((posper[(trainingSize+i):(trainingSize+ i + (horizon) - 1)] - forecasts$f)^2)
+         
+  ASEHolder[i] = ASE
+
+}
+
+ASEHolder
+hist(ASEHolder)
+WindowedASE = mean(ASEHolder)
+
+summary(ASEHolder)
+WindowedASE
+```
+
+
+
+Now we will look 20 steps back
+
+```{r}
+for22 = fore.arma.wge(posper,phi=estPosper22$phi, theta=estPosper22$theta, n.ahead=20,lastn=TRUE, plot=TRUE)
+ASE22 = mean((posper[(91-20+1):91] - for22$f)^2)
+ASE22
+```
+
+Running the 20 day lookback forecast, we cans see that our model is predicting the positive percentage to increase back towards the mean which will ultimately oscillate if we extend the mean far out enough. Doing so on a larger window back, we ended up with a better ASE than the 10 day lookback window. 
+
+
+```{r rolling window}
+trainingSize = 70
+horizon = 10
+ASEHolder = numeric()
+
+for( i in 1:(81-(trainingSize + horizon) + 1))
+{
+  
+  forecasts = fore.aruma.wge(posper[i:(i+(trainingSize-1))],phi = estPosper22$phi, theta = estPosper22$theta, s = 0, d = 0,n.ahead = horizon)
+  
+  ASE = mean((posper[(trainingSize+i):(trainingSize+ i + (horizon) - 1)] - forecasts$f)^2)
+         
+  ASEHolder[i] = ASE
+
+}
+
+ASEHolder
+hist(ASEHolder)
+WindowedASE = mean(ASEHolder)
+
+summary(ASEHolder)
+WindowedASE
+```
+
+Now lets look into a seasonal model and see if there is a significant change in our ASE score.
+
+# Trend Modeling
+
+```{r}
+p.ns = artrans.wge(posper,phi.tr=(1))
+plotts.sample.wge(p.ns)
+```
+
+We can see that accounting for a trend reducing the wandering behavior of the model. 
+
+```{r}
+aic5.wge(p.ns, p=0:10, q=0:2) # arima(10,1,0)
+aic5.wge(p.ns, p=0:10, q=0:2, type='bic') #arima(2,1,0)
+```
+
+We can see that the AIC picks a 10,1,0 model while the bic picked the 2,1,0 model. We will move fowrad with the bic model as it is simpler to work with. 
+
+```{r}
+estp.ns = est.arma.wge(p.ns,p=2,q=0)
+estp.ns
+mean(p.ns)
+```
+
+The preferred estimated model is
+(1 + 0.78B + 0.40B^2)(X - B) = a_t
+
+```{r}
+fore.arma.wge(p.ns,phi=estp.ns$phi, n.ahead=10,plot=TRUE,limits=FALSE)
+forNS = fore.arma.wge(p.ns,phi=estp.ns$phi, n.ahead=10,lastn=TRUE,plot=TRUE,limits=FALSE)
+```
+
+Both forecasts accounting for the trend will oscillate back towards the mean. 
+
+Now let's pressure test the findings with an ASE score. 
+
+
+```{r}
+ASENS = mean((p.ns[(90-20+1):90] - forNS$f)^2)
+ASENS
+```
+
+ASE for data accounting for a trend ended up being much lower than a stationary model. However, when we run the same model on the data nonstationarized, we get a much higher ASE. 
+
+```{r rolling window}
+trainingSize = 70
+horizon = 10
+ASEHolder = numeric()
+
+for( i in 1:(91-(trainingSize + horizon) + 1))
+{
+  
+  forecasts = fore.aruma.wge(p.ns[i:(i+(trainingSize-1))],phi = estp.ns$phi, theta = estp.ns$theta, s = 0, d = 1,n.ahead = horizon)
+  
+  ASE = mean((p.ns[(trainingSize+i):(trainingSize+ i + (horizon) - 1)] - forecasts$f)^2)
+         
+  ASEHolder[i] = ASE
+
+}
+
+ASEHolder
+hist(ASEHolder)
+WindowedASE = mean(ASEHolder)
+
+summary(ASEHolder)
+WindowedASE
+```
+On the transformed realization, we see that we get a really low ASE, which isn't totally fair since both are tracking back towards the mean and our realization is doing the same due to the nature of the covid trend. 
+
+Next we will look at a seasonal model. 
+
+```{r}
+# Beginning the process of building a seasonal model (s=7)
+y=artrans.wge(posper, phi.tr=c(0,0,0,0,0,0,1))
+y_difTwice=artrans.wge(p.ns, phi.tr=c(0,0,0,0,0,0,1))
+```
+
+The seasonality forecast also reduces the wandering behavior of our model. 
+
+```{r}
+aic5.wge(y_difTwice, p = 0:12) # selects an aruma (10,1,0)s=7
+aic5.wge(y_difTwice, p = 0:12, type='bic') #selects a aruma(9,1,0)s=7
+
+```
+
+The model we will be using to estimate our phis and thetas will be an ARUMA(9,1,0) with a seasonality of 7. 
+
+```{r}
+esty = est.arma.wge(y_difTwice,p=9, q=0)
+esty$phi
+esty$theta
+factor.wge(phi=esty$phi)
+```
+
+The preferred estimated model is
+(1 + 0.91B + 0.67B^2 + 0.34B^3 + 0.29B^4 + 0.22B^5 + 0.10B^6 + 0.64B^7 + 0.55B^8 + 0.24B^9)(X - B)(X - B^7) = a_t
+
+```{r}
+fore.aruma.wge(posper,phi=esty$phi, theta=esty$theta, d=1,s=7,n.ahead=20, lastn=FALSE, plot=TRUE)
+forS7 = fore.aruma.wge(posper,phi=esty$phi, theta=esty$theta, d=1,s=7,n.ahead=20, lastn=TRUE, plot=TRUE)
+```
+
+Now, let's check our ASE for the Seasonal Trend model. 
+
+```{r}
+ASEs7 = mean((posper[(90-20+1):90] - forS7$f)^2)
+ASEs7
+```
+
+Here, we did pretty well with our ASE score on a 20 day lookback. 
+
+
+```{r rolling window}
+trainingSize = 70
+horizon = 10
+ASEHolder = numeric()
+
+for( i in 1:(81-(trainingSize + horizon) + 1))
+{
+  
+  forecasts = fore.aruma.wge(posper[i:(i+(trainingSize-1))],phi = esty$phi, theta = esty$theta, s = 7, d = 1,n.ahead = horizon)
+  
+  ASE = mean((posper[(trainingSize+i):(trainingSize+ i + (horizon) - 1)] - forecasts$f)^2)
+         
+  ASEHolder[i] = ASE
+
+}
+
+ASEHolder
+hist(ASEHolder)
+WindowedASE = mean(ASEHolder)
+
+summary(ASEHolder)
+WindowedASE
+```
+
+So in Summary, our ASE scores are as follows.
+
+```{r}
+print('So, In Summary, the ASE Values Are:')
+print(paste('Arma(2,2):', ASE22))
+print(paste('Arima(2,1,0):', ASENS))
+print(paste('Aruma(9,1,0)s=7:', ASEs7))
+```
+
+The best performing model with the US data is the ARIMA(2,1,0). Interestingly, while we see what visually appears to be a seasonal trend, accounting for it does not produce the best mode. 
+
+
+
+### Var Forecast
+
+For our multivariate forecasts, we will use the VAR model to predict positive percentage in the US and AZ data. 
+
+To get started, let's look into seeing if there's a lag between other variables and the ccf.
+
+```{r}
+ccf(posper, us2$death[36:182]) # lag is 1
+ccf(posper, us2$hospitalizedCurrently[56:182]) # lag is 10
+ccf(posper, us2$inIcuCurrently[65:182]) #lag is 3
+ccf(posper, us2$onVentilatorCurrently[64:182]) # lag is -12
+ccf(posper, us2$deathIncrease) #lag is -11
+ccf(posper, us2$totalTestResultsIncrease) #lag is -3
+```
+
+Var Forecast of Stationary data.
+
+Looking at the CCFs of positive percentage with other key variables, we can see that almost all of them have some sort of lagged correlation with the residual variables. So when we run a multivariate forecast, we can account for these lags to strengthen the forecast. 
+
+```{r}
+us2[is.na(us2)] <- 0
+```
+
+```{r}
+library(vars)
+us2$posper = posper
+
+#us2$posper[1:172], us2$death[1:172], us2$hospitalizedCurrently[1:172], us2$inIcuCurrently[1:172], us2$onVentilatorCurrently[1:172], us2$deathIncrease[1:172], us2$totalTestResultsIncrease[1:172], us2$negativeIncrease[1:172], us2$positiveIncrease[1:172]
+
+BSVar1 = VARselect(cbind(us2$posper[1:172], us2$totalTestResultsIncrease[1:172], us2$positiveIncrease[1:172]), type = 'both', lag.max = 5)
+BSVar1 # AIC was 3.73e01 for p =20
+```
+
+Running a var that accounts for the lags between positive percentage, deaths, numbers of people in the ICU, the number of hospitalized patients, number of people on ventilators, number of positives, number of negatives and total test results, we can see that accounting for all the lags the preferred AIC is a p of 10 at an AIC of 3.58e+01.
+
+Now let's look to see if we can predict the forecast on the var. 
+
+```{r}
+#ustest <- data.frame(posper, us2$death, us2$hospitalizedCurrently, us2$inIcuCurrently, us2$onVentilatorCurrently, us2$totalTestResultsIncrease, us2$negativeIncrease, us2$positiveIncrease)
+#ustest = cbind(us2$posper[40:140], us2$death[40:140], us2$hospitalizedCurrently[40:140], us2$inIcuCurrently[40:140], us2$onVentilatorCurrently[40:140], us2$totalTestResultsIncrease[40:140], us2$negativeIncrease[40:140], us2$positiveIncrease[40:140])
+
+
+PosperVAR = VAR(cbind(us2$posper[1:172], us2$totalTestResultsIncrease[1:172], us2$positiveIncrease[1:172]), type = "const", p = 5)
+preds=predict(PosperVAR,n.ahead=10)
+```
+
+
+```{r}
+startingPoints = us2$posper[163:172]
+posperForecasts = preds$fcst$y1[,1:4] + startingPoints
+```
+
+Now let's plot our findings
+
+```{r}
+#dev.off()
+
+library(RColorBrewer)
+#fanchart(preds, colors = brewer.pal(n = 8, name= 'Blues'))
+
+plot(seq(1,182,1), us2$posper, type = "l",xlim = c(0,185), ylim = c(0,0.6), ylab = "Positive Percentage", main = "10 Day Positive Percentage Forecast")
+lines(seq(173,182,1), as.data.frame(posperForecasts)$fcst, type = "l", col = "red")
+```
+
+Using the Var forecast including death, hospitalized patients, patients on ventilators and patients in ICU, we can see that the prediction over emphasize the spike that would happen between observations 172 - 182. Lets check the ASE to see how we did. 
+
+```{r}
+ASEvarstat = mean((us2$posper[173:182] - posperForecasts[,1])^2)
+ASEvarstat #0.0804
+```
+
+Now lets do a var assuming a trend model (which ended up being the best in a univariate study)
+
+Var forecast with trend 
+
+```{r}
+pospertrend = artrans.wge(us2$posper, 1)
+testresultstrends = artrans.wge(us2$totalTestResultsIncrease, 1)
+positivetesttrend = artrans.wge(us2$positiveIncrease, 1)
+```
+
+Now that we have differenced variables, lets see which gives us the best AIC score
+
+```{r}
+BSVar1 = VARselect(cbind(pospertrend[1:172], testresultstrends[1:172], positivetesttrend[1:172]), type = 'both', lag.max = 10)
+BSVar1 # AIC was 3.03e01 for p =10
+```
+
+Like the earlier model, we end up with an AIC preference of 20. 
+
+```{r}
+PosperVAR = VAR(cbind(pospertrend[1:172], testresultstrends[1:172], positivetesttrend[1:172]), type = "const", p = 10)
+preds=predict(PosperVAR,n.ahead=10)
+```
+
+```{r}
+startingPoints = pospertrend[163:172]
+posperForecasts = preds$fcst$y1[,1:3] + startingPoints
+```
+
+
+```{r}
+#dev.off()
+
+library(RColorBrewer)
+#fanchart(preds, colors = brewer.pal(n = 8, name= 'Blues'))
+
+plot(seq(1,181,1), pospertrend, type = "l",xlim = c(0,185), ylim = c(-0.5,0.5), ylab = "Positive Percentage", main = "10 Day Positive Percentage Forecast")
+lines(seq(173,182,1), as.data.frame(posperForecasts)$fcst, type = "l", col = "red")
+```
+
+
+
+```{r}
+ASEvartrend = mean((pospertrend[172:181] - posperForecasts[,1])^2)
+ASEvartrend #0.27
+```
+
+We can see with a trend model, we get a better ASE than than the stationary model we ran previously. 
+
+Now lets try a seasonal model accounting for 7 days on top of the trend data we previously ran. 
+
+```{r}
+pospertrend2 = artrans.wge(pospertrend, c(rep(0,6),1))
+testresultstrends2 = artrans.wge(testresultstrends, c(rep(0,6),1))
+positivetesttrend2 = artrans.wge(positivetesttrend, c(rep(0,6),1))
+```
+
+```{r}
+BSVar1 = VARselect(cbind(pospertrend2[1:172], testresultstrends2[1:172], positivetesttrend2[1:172]), type = 'both', lag.max = 10)
+BSVar1 # AIC was 3.03e01 for p =10
+```
+
+```{r}
+PosperVAR = VAR(cbind(pospertrend[1:172], testresultstrends[1:172], positivetesttrend[1:172]), type = "const", p = 10)
+preds=predict(PosperVAR,n.ahead=10)
+```
+
+
+
+```{r}
+startingPoints = pospertrend2[163:172]
+posperForecasts = preds$fcst$y1[,1:3] + startingPoints
+```
+
+
+```{r}
+#dev.off()
+
+library(RColorBrewer)
+#fanchart(preds, colors = brewer.pal(n = 8, name= 'Blues'))
+
+plot(seq(1,174,1), pospertrend2, type = "l",xlim = c(0,185), ylim = c(-0.5,0.5), ylab = "Positive Percentage", main = "10 Day Positive Percentage Forecast")
+lines(seq(165,174,1), as.data.frame(posperForecasts)$fcst, type = "l", col = "red")
+```
+```{r}
+ASEvarairplane = mean((pospertrend2[165:174] - posperForecasts[,1])^2)
+ASEvarairplane #0.27
+```
+
+
+```{r}
+print('So, In Summary, the ASE Values Are:')
+print(paste('Arma(2,2):', ASE22))
+print(paste('Arima(2,1,0):', ASENS))
+print(paste('Aruma(9,1,0)s=7:', ASEs7))
+print(paste('Var Stationary:', ASEvarstat))
+print(paste('Var Trend:', ASEvartrend))
+print(paste('Var Airplane:', ASEvarairplane))
+```
+
+
+Here we can see the best performing models are continuing to be focusing on mitigating a wandering trend rather than a stationary and seasonal/arplane models.
+
+
+Next we will use mlp and neural nets to see if we can improve upon performmance. 
+
+# MLP
+
+We will break up our US2 dataset into a training set of 80% and a testing set of 20% which will give us a training set of 146 and a testing set of 36. 
+
+```{r}
+library(nnfor)
+library(forecast)
+library(vars)
+library(tswge)
+
+us2Small = us2[1:173,]
+us2Large = us2[1:163,]
+us2SmallDF =  data.frame(date = ts(us2Small$date), test = ts(us2Small$totalTestResultsIncrease), positive = ts(us2Small$positiveIncrease))
+us2LargeDF =  data.frame(test = ts(us2Large$totalTestResultsIncrease), positive = ts(us2Large$positiveIncrease))
+```
+
+From here, we will fit it into a neural net model.
+
+```{r}
+fit.mlp.small = mlp(ts(us2Small$posper), allow.det.season = FALSE, reps = 20, comb = 'mean', xreg = us2SmallDF, hd.auto.type = 'valid')
+fit.mlp.small
+plot(fit.mlp.small)
+
+fit.mlp.large = mlp(ts(us2Large$posper), allow.det.season = FALSE, reps = 20, comb = 'mean', xreg = us2LargeDF, hd.auto.type = 'valid')
+fit.mlp.large
+plot(fit.mlp.large)
+```
+The MLP output gave us 5 notes and 20 repititions, with two regressors included. 
+
+From here we will create a dataframe using the key features of the regressors, and then forecast against it using a horizon of 10 days. 
+
+```{r}
+USDF = data.frame(test = ts(us2$totalTestResults), positive = ts(us2$positiveIncrease))
+fore.mlp10 = forecast(fit.mlp.small, h = 9, xreg = USDF)
+fore.mlp20 = forecast(fit.mlp.large, h = 19, xreg = USDF)
+plot(fore.mlp10)
+plot(fore.mlp20)
+```
+
+Now let's check the ASE of our short term and long term forecast. 
+
+```{r}
+ASEmlp10 = mean((us2$posper[174:182] - fore.mlp10$mean)^2)
+ASEmlp10
+ASEmlp20 = mean((us2$posper[164:182] - fore.mlp20$mean)^2)
+ASEmlp20
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Now Let's look at the AZ data. 
+
+## Arizona Data
+
+```{r}
+plotts.sample.wge(as2$date)
+```
+
+Here we can see that the date is in order which works for us in our realization. 
+
+```{r}
+plotts.sample.wge(as2$death[18:140])
+```
+
+For the case of deaths in Arizona, we can see that the model is increasing with the passing day which indicates that the death variable is a cumulative figure.
+
+```{r}
+plotts.sample.wge(as2$positive)
+plotts.sample.wge(as2$negative)
+plotts.sample.wge(as2$negative/us2$positive)
+```
+
+We can see that both the positive and negative cases are cumulative variables as well. However, looking at the ratio between the two, we can see that in Arizona the number of negative cases is vastly outweighing the positive cases.
+
+Next lets look at the non cumulative data to see how it looks. 
+
+```{r}
+# This plot shows the increase in positive cases over time.  
+plotts.sample.wge(as2$positiveIncrease)
+# This shows the same for negative cases over time.
+plotts.sample.wge(as2$negativeIncrease)
+```
+
+The positive rate shows a bit of a lag to the US data, which shows a sharp increase in April, to a decrease in May-June to another increase in July. The Negatives however, gradually increase as a relationship to the increase in testing that went on in the state. 
+
+The totalIncrease created by summing the positive and negative increase should be equivalent to the number of tests administered without considering pending cases. 
+
+```{r}
+totalIncrease = as2$positiveIncrease + as2$negativeIncrease
+```
+
+This variable (totalTestResultsIncresase) should closely match the totalIncrease 
+
+```{r}
+plotts.sample.wge(totalIncrease)
+```
+
+The totalincrease variable showed to have a similar pattern as the positive cases for the arizona data. The totalIncrease variable shows to match exactly with the totalTestResultsIncrease variable, so now we can have confidence on how that variable was calculated and use it moving forward.
+
+Here is a graph of increase count in total tests.
+
+```{r}
+plotts.sample.wge(as2$totalTestResultsIncrease)
+```
+
+Now we are divding the total test by cumulative positive cases. 
+
+```{r}
+pp = totalIncrease / as2$positive
+plotts.sample.wge(pp[18:140])
+```
+
+Now we are creating the variable posper, which stands for positive percentage, given as decimal percentages.
+
+```{r}
+posperas = (as2$positiveIncrease[50:140]/as2$totalTestResultsIncrease[50:140])
+plotts.sample.wge(posperas)
+```
+
+Looking at the Arizona positive percentage indicates that the rate of positive tests and the likelihood of a test to be positive increased over time through June and looks like it is beginning to dip in July. 
+
+
+
+# AZ Forecast
+
+Stationary Forecast
+
+```{r}
+aic5.wge(posperas, p=0:5, q=0:2) # arma(3,0)
+aic5.wge(posperas, p=0:5, q=0:2, type='bic') # arma(1,1)
+```
+
+The BIC model selects the ARMA (1,1) model which we will use moving forward. 
+
+```{r}
+estPosper22 = est.arma.wge(posperas, p=1, q=1)
+mean(posperas)
+estPosper22$phi
+estPosper22$theta
+```
+
+(1 - 0.98B)(X - 0.16) = (1 - 0.73a_t)
+
+```{r}
+factor.wge(phi=estPosper22$phi)
+```
+
+Forcasting 10 ahead for the ARMA model.  Both of these will eventually reach the mean of 0.16
+
+```{r}
+fore.arma.wge(posperas,phi=estPosper22$phi, theta=estPosper22$theta, n.ahead=10,plot=TRUE)
+```
+
+Looking at the forecast, we can see that with the AR1 model, our forecasts are regressing back to the mean. 
+
+Now let's check 20 steps back.
+
+```{r}
+for22 = fore.arma.wge(posperas,phi=estPosper22$phi, theta=estPosper22$theta, n.ahead=20,lastn=TRUE, plot=TRUE)
+ASEa22 = mean((posperas[(90-20+1):90] - for22$f)^2)
+ASEa22
+```
+
+The ASE score for the stationary Arizona model was 0.0026 which is relatively low. 
+
+```{r rolling window}
+trainingSize = 70
+horizon = 10
+ASEHolder = numeric()
+
+for( i in 1:(81-(trainingSize + horizon) + 1))
+{
+  
+  forecasts = fore.aruma.wge(posperas[i:(i+(trainingSize-1))],phi = estPosper22$phi, theta = estPosper22$theta, s = 0, d = 0,n.ahead = horizon)
+  
+  ASE = mean((posperas[(trainingSize+i):(trainingSize+ i + (horizon) - 1)] - forecasts$f)^2)
+         
+  ASEHolder[i] = ASE
+
+}
+
+ASEHolder
+hist(ASEHolder)
+WindowedASE = mean(ASEHolder)
+
+summary(ASEHolder)
+WindowedASE
+```
+
+
+Now lets try adding a nonstationary process. 
+
+```{r}
+p.ns = artrans.wge(posperas,phi.tr=(1))
+plotts.sample.wge(p.ns)
+```
+
+We accounted for the wandering behavior with our trend forecast. Which was a low pass filter. 
+
+```{r}
+aic5.wge(p.ns, p=0:10, q=0:2) # arima(10,1,2)
+aic5.wge(p.ns, p=0:10, q=0:2, type='bic') #arima(2,1,0)
+```
+
+
+Running our AIC, we can see that the preferred ARIMA model was (10,1,2) while our BIC preferred (2,1,0), which we will move forward with. 
+
+```{r}
+estp.ns = est.arma.wge(p.ns,p=2,q=0)
+```
+
+The preferred estimated model is
+(1 + 0.65B + 0.50B^2)(X - B)(1 - B) = a_t
+
+Using this model, we will forecast a nonstationary ARIMA model. 
+
+```{r}
+fore.arma.wge(p.ns,phi=estp.ns$phi, n.ahead=10,plot=TRUE,limits=FALSE)
+forNS = fore.arma.wge(p.ns,phi=estp.ns$phi, n.ahead=10,lastn=TRUE,plot=TRUE,limits=FALSE)
+```
+
+Here we can see the forecast is going to ascillate back towards the mean because of the AR2 model, doing the lookback window, we can see that that this doesn't seem to align with the realization we have.
+
+Let's confirm for sure by checking the ASE.
+
+```{r}
+ASEaNS = mean((posperas[(90-20+1):90] - forNS$f)^2)
+ASEaNS
+```
+
+
+```{r rolling window}
+trainingSize = 70
+horizon = 10
+ASEHolder = numeric()
+
+for( i in 1:(81-(trainingSize + horizon) + 1))
+{
+  
+  forecasts = fore.aruma.wge(posperas[i:(i+(trainingSize-1))],phi = estp.ns$phi, theta = estp.ns$theta, s = 7, d = 0,n.ahead = horizon)
+  
+  ASE = mean((posperas[(trainingSize+i):(trainingSize+ i + (horizon) - 1)] - forecasts$f)^2)
+         
+  ASEHolder[i] = ASE
+
+}
+
+ASEHolder
+hist(ASEHolder)
+WindowedASE = mean(ASEHolder)
+
+summary(ASEHolder)
+WindowedASE
+```
+
+
+Let's now look to account for the possible seasonality as well as a trend to see if we can get a better ASE. 
+
+```{r}
+# Beginning the process of building a seasonal model (s=7)
+y=artrans.wge(posperas, phi.tr=c(0,0,0,0,0,0,1))
+y_difTwice=artrans.wge(p.ns, phi.tr=c(0,0,0,0,0,0,1))
+```
+
+
+Now let's check the AIC of the trend and seasonal models. 
+
+```{r}
+aic5.wge(y_difTwice, p = 0:12, type='bic') #selects a aruma(11,1,0)s=7
+```
+
+The bic, which punishes model complexity gave us a preferred ARUMA (11,1,0) s= 7. Now let's introduce the estimate model to get the phis to forecast against. 
+
+```{r}
+esty = est.arma.wge(y_difTwice,p=11, q=0)
+esty$phi
+esty$theta
+factor.wge(phi=esty$phi)
+```
+
+The preferred estimated model is
+(1 + 0.93B + 0.78B^2 + 0.45B^3 + 0.56B^4 + 0.55B^5 + 0.22B^6 + 0.44B^7 + 0.23B^8 - 0.02B^9 - 0.49B^10 - 0.36B^11)(1 - B^7)(1 - B) = a_t
+
+```{r}
+fore.aruma.wge(posperas,phi=esty$phi, theta=esty$theta, d=1,s=7,n.ahead=20, lastn=FALSE, plot=TRUE)
+forS7 = fore.aruma.wge(posperas,phi=esty$phi, theta=esty$theta, d=1,s=7,n.ahead=20, lastn=TRUE, plot=TRUE)
+```
+
+The seasonal and trend forecast does seem to pass the visual test with our cycling being captured and the trend looking like it's starting to dip back down. 
+
+Let's check for certain with the ASE.
+
+```{r}
+ASEas7 = mean((posperas[(90-20+1):90] - forS7$f)^2)
+ASEas7
+```
+
+```{r rolling window}
+trainingSize = 70
+horizon = 10
+ASEHolder = numeric()
+
+for( i in 1:(81-(trainingSize + horizon) + 1))
+{
+  
+  forecasts = fore.aruma.wge(posperas[i:(i+(trainingSize-1))],phi = esty$phi, theta = esty$theta, s = 7, d = 1,n.ahead = horizon)
+  
+  ASE = mean((posperas[(trainingSize+i):(trainingSize+ i + (horizon) - 1)] - forecasts$f)^2)
+         
+  ASEHolder[i] = ASE
+
+}
+
+ASEHolder
+hist(ASEHolder)
+WindowedASE = mean(ASEHolder)
+
+summary(ASEHolder)
+WindowedASE
+```
+
+Now lets look at all the ASEs from our stationary, trend and seasonal model to see which one performed the best. 
+
+```{r}
+print('So, In Summary, the ASE Values Are:')
+print(paste('Arma(1,1):', ASEa22))
+print(paste('Arima(2,1,0):', ASEaNS))
+print(paste('Aruma(11,1,0)s=7:', ASEas7))
+```
+
+Here it appears that our staionary model had the lowest ASE for the AZ data with 0.0026. 
+
+
+Next, we will look into including multiple variables to see hwo that affects positive percentage and the ASE score we achieved. 
+
+
+
+### AZ Var Forecast
+
+For our multivariate forecasts, we will use the VAR model to predict positive percentage in the US and AZ data. 
+
+To get started, let's look into seeing if there's a lag between other variables and the ccf.
+
+```{r}
+posperas = (as2$positiveIncrease[1:140]/as2$totalTestResultsIncrease[1:140])
+posperas[is.na(posperas)] <- 0
+
+ccf(posperas, as2$death) # lag is -18
+ccf(posperas, as2$hospitalizedCurrently) # lag is 0
+ccf(posperas, as2$inIcuCurrently) #lag is -15
+ccf(posperas, as2$onVentilatorCurrently) # lag is -15
+ccf(posperas, as2$deathIncrease) #lag is 12
+ccf(posperas, as2$totalTestResultsIncrease) #lag is -1
+ccf(posperas, as2$positiveIncrease)
+```
+
+Var Forecast of Stationary data.
+
+Looking at the CCFs of positive percentage with other key variables, we can see that almost all of them have some sort of lagged correlation with the residual variables. So when we run a multivariate forecast, we can account for these lags to strengthen the forecast. 
+
+```{r}
+as2[is.na(as2)] <- 0
+```
+
+```{r}
+library(vars)
+as2$posper = posperas
+
+#us2$posper[1:172], us2$death[1:172], us2$hospitalizedCurrently[1:172], us2$inIcuCurrently[1:172], us2$onVentilatorCurrently[1:172], us2$deathIncrease[1:172], us2$totalTestResultsIncrease[1:172], us2$negativeIncrease[1:172], us2$positiveIncrease[1:172]
+
+BSVar1 = VARselect(cbind(as2$posper[1:140], as2$totalTestResultsIncrease[1:140], as2$positiveIncrease[1:140]), type = 'both', lag.max = 5)
+BSVar1 # AIC was 2.38e01 for p =3
+```
+
+
+Running a var that accounts for the lags between positive percentage, deaths, numbers of people in the ICU, the number of hospitalized patients, number of people on ventilators, number of positives, number of negatives and total test results, we can see that accounting for all the lags the preferred AIC is a p of 10 at an AIC of 3.58e+01.
+
+Now let's look to see if we can predict the forecast on the var. 
+
+```{r}
+#ustest <- data.frame(posper, us2$death, us2$hospitalizedCurrently, us2$inIcuCurrently, us2$onVentilatorCurrently, us2$totalTestResultsIncrease, us2$negativeIncrease, us2$positiveIncrease)
+#ustest = cbind(us2$posper[40:140], us2$death[40:140], us2$hospitalizedCurrently[40:140], us2$inIcuCurrently[40:140], us2$onVentilatorCurrently[40:140], us2$totalTestResultsIncrease[40:140], us2$negativeIncrease[40:140], us2$positiveIncrease[40:140])
+
+
+PosperVAR = VAR(cbind(as2$posper[1:140], as2$totalTestResultsIncrease[1:140], as2$positiveIncrease[1:140]), type = "const", p = 3)
+preds=predict(PosperVAR,n.ahead=10)
+```
+
+```{r}
+startingPoints = us2$posper[131:140]
+posperForecasts = preds$fcst$y1[,1:4] + startingPoints
+```
+
+Now let's plot our findings
+
+```{r}
+#dev.off()
+
+library(RColorBrewer)
+#fanchart(preds, colors = brewer.pal(n = 8, name= 'Blues'))
+
+plot(seq(1,140,1), as2$posper, type = "l",xlim = c(0,145), ylim = c(0,0.6), ylab = "Positive Percentage", main = "10 Day Positive Percentage Forecast")
+lines(seq(131,140,1), as.data.frame(posperForecasts)$fcst, type = "l", col = "red")
+```
+
+
+
+Using the Var forecast including death, hospitalized patients, patients on ventilators and patients in ICU, we can see that the prediction over emphasize the spike that would happen between observations 172 - 182. Lets check the ASE to see how we did. 
+
+```{r}
+ASEavarstat = mean((as2$posper[131:140] - posperForecasts[,1])^2)
+ASEavarstat #0.018
+```
+
+Now lets do a var assuming a trend model (which ended up being the best in a univariate study)
+
+Var forecast with trend 
+
+```{r}
+pospertrend = artrans.wge(as2$posper, 1)
+testresultstrends = artrans.wge(as2$totalTestResultsIncrease, 1)
+positivetesttrend = artrans.wge(as2$positiveIncrease, 1)
+```
+
+
+Now that we have differenced variables, lets see which gives us the best AIC score
+
+```{r}
+BSVar1 = VARselect(cbind(pospertrend[1:139], testresultstrends[1:139], positivetesttrend[1:139]), type = 'both', lag.max = 10)
+BSVar1 # AIC was 2.39e01 for p =9
+```
+
+Like the earlier model, we end up with an AIC preference of 20. 
+
+```{r}
+PosperVAR = VAR(cbind(pospertrend[1:139], testresultstrends[1:139], positivetesttrend[1:139]), type = "const", p = 9)
+preds=predict(PosperVAR,n.ahead=10)
+```
+
+
+
+```{r}
+startingPoints = pospertrend[130:139]
+posperForecasts = preds$fcst$y1[,1:3] + startingPoints
+```
+
+
+```{r}
+#dev.off()
+
+library(RColorBrewer)
+#fanchart(preds, colors = brewer.pal(n = 8, name= 'Blues'))
+
+plot(seq(1,139,1), pospertrend, type = "l",xlim = c(0,145), ylim = c(-0.5,0.5), ylab = "Positive Percentage", main = "10 Day Positive Percentage Forecast")
+lines(seq(130,139,1), as.data.frame(posperForecasts)$fcst, type = "l", col = "red")
+```
+
+
+
+
+```{r}
+ASEavartrend = mean((pospertrend[130:139] - posperForecasts[,1])^2)
+ASEavartrend #0.0017
+```
+
+We can see with a trend model, we get a better ASE than than the stationary model we ran previously. 
+
+Now lets try a seasonal model accounting for 7 days on top of the trend data we previously ran. 
+
+```{r}
+pospertrend2 = artrans.wge(pospertrend, c(rep(0,6),1))
+testresultstrends2 = artrans.wge(testresultstrends, c(rep(0,6),1))
+positivetesttrend2 = artrans.wge(positivetesttrend, c(rep(0,6),1))
+```
+
+
+```{r}
+BSVar1 = VARselect(cbind(pospertrend2[1:132], testresultstrends2[1:132], positivetesttrend2[1:132]), type = 'both', lag.max = 10)
+BSVar1 # AIC was 2.41e01 for p =9
+```
+
+
+
+```{r}
+PosperVAR = VAR(cbind(pospertrend[1:132], testresultstrends[1:132], positivetesttrend[1:132]), type = "const", p = 9)
+preds=predict(PosperVAR,n.ahead=10)
+```
+
+
+
+```{r}
+startingPoints = pospertrend2[123:132]
+posperForecasts = preds$fcst$y1[,1:3] + startingPoints
+```
+
+
+```{r}
+#dev.off()
+
+library(RColorBrewer)
+#fanchart(preds, colors = brewer.pal(n = 8, name= 'Blues'))
+
+plot(seq(1,132,1), pospertrend2, type = "l",xlim = c(0,140), ylim = c(-0.5,0.5), ylab = "Positive Percentage", main = "10 Day Positive Percentage Forecast")
+lines(seq(123,132,1), as.data.frame(posperForecasts)$fcst, type = "l", col = "red")
+```
+
+
+```{r}
+ASEavarairplane = mean((pospertrend2[123:132] - posperForecasts[,1])^2)
+ASEavarairplane #0.0030
+```
+
+
+```{r}
+print('So, In Summary, the ASE Values Are:')
+print(paste('Arma(2,2):', ASEa22))
+print(paste('Arima(2,1,0):', ASEaNS))
+print(paste('Aruma(9,1,0)s=7:', ASEas7))
+print(paste('Var Stationary:', ASEavarstat))
+print(paste('Var Trend:', ASEavartrend))
+print(paste('Var Airplane:', ASEavarairplane))
+```
