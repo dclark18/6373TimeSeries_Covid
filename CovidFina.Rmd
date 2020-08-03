@@ -388,13 +388,18 @@ Now let's look to see if we can predict the forecast on the var.
 
 
 PosperVAR = VAR(cbind(us2$posper[1:172], us2$totalTestResultsIncrease[1:172], us2$positiveIncrease[1:172]), type = "const", p = 5)
-preds=predict(PosperVAR,n.ahead=10)
+preds10stat=predict(PosperVAR,n.ahead=10)
+
+preds20stat=predict(PosperVAR,n.ahead=20)
 ```
 
 
 ```{r}
-startingPoints = us2$posper[163:172]
-posperForecasts = preds$fcst$y1[,1:4] + startingPoints
+startingPoints10 = us2$posper[163:172]
+posperForecasts10 = preds10stat$fcst$y1[,1:4] + startingPoints10
+
+startingPoints20 = us2$posper[153:172]
+posperForecasts20 = preds20stat$fcst$y1[,1:4] + startingPoints20
 ```
 
 Now let's plot our findings
@@ -406,14 +411,20 @@ library(RColorBrewer)
 #fanchart(preds, colors = brewer.pal(n = 8, name= 'Blues'))
 
 plot(seq(1,182,1), us2$posper, type = "l",xlim = c(0,185), ylim = c(0,0.6), ylab = "Positive Percentage", main = "10 Day Positive Percentage Forecast")
-lines(seq(173,182,1), as.data.frame(posperForecasts)$fcst, type = "l", col = "red")
+lines(seq(173,182,1), as.data.frame(posperForecasts10)$fcst, type = "l", col = "red")
+
+plot(seq(1,182,1), us2$posper, type = "l",xlim = c(0,185), ylim = c(0,0.6), ylab = "Positive Percentage", main = "10 Day Positive Percentage Forecast")
+lines(seq(163,182,1), as.data.frame(posperForecasts20)$fcst, type = "l", col = "red")
 ```
 
 Using the Var forecast including death, hospitalized patients, patients on ventilators and patients in ICU, we can see that the prediction over emphasize the spike that would happen between observations 172 - 182. Lets check the ASE to see how we did. 
 
 ```{r}
-ASEvarstat = mean((us2$posper[173:182] - posperForecasts[,1])^2)
+ASEvarstat = mean((us2$posper[173:182] - posperForecasts10[,1])^2)
 ASEvarstat #0.0804
+
+ASEvarstat20 = mean((us2$posper[163:182] - posperForecasts20[,1])^2)
+ASEvarstat20 #0.0804
 ```
 
 Now lets do a var assuming a trend model (which ended up being the best in a univariate study)
@@ -437,7 +448,8 @@ Like the earlier model, we end up with an AIC preference of 20.
 
 ```{r}
 PosperVAR = VAR(cbind(pospertrend[1:172], testresultstrends[1:172], positivetesttrend[1:172]), type = "const", p = 10)
-preds=predict(PosperVAR,n.ahead=10)
+preds10=predict(PosperVAR,n.ahead=10)
+preds20=predict(PosperVAR,n.ahead=20)
 ```
 
 ```{r}
@@ -460,7 +472,7 @@ lines(seq(173,182,1), as.data.frame(posperForecasts)$fcst, type = "l", col = "re
 
 ```{r}
 ASEvartrend = mean((pospertrend[172:181] - posperForecasts[,1])^2)
-ASEvartrend #0.27
+ASEvartrend #0.0036
 ```
 
 We can see with a trend model, we get a better ASE than than the stationary model we ran previously. 
@@ -479,15 +491,18 @@ BSVar1 # AIC was 3.03e01 for p =10
 ```
 
 ```{r}
-PosperVAR = VAR(cbind(pospertrend[1:172], testresultstrends[1:172], positivetesttrend[1:172]), type = "const", p = 10)
+PosperVAR = VAR(cbind(pospertrend2[1:172], testresultstrends[1:172], positivetesttrend[1:172]), type = "const", p = 10)
 preds=predict(PosperVAR,n.ahead=10)
 ```
 
 
 
 ```{r}
-startingPoints = pospertrend2[163:172]
-posperForecasts = preds$fcst$y1[,1:3] + startingPoints
+startingPoints10 = pospertrend2[163:172]
+posperForecasts10 = preds10$fcst$y1[,1:3] + startingPoints10
+
+startingPoints20 = pospertrend2[153:172]
+posperForecasts20 = preds20$fcst$y1[,1:3] + startingPoints20
 ```
 
 
@@ -498,11 +513,11 @@ library(RColorBrewer)
 #fanchart(preds, colors = brewer.pal(n = 8, name= 'Blues'))
 
 plot(seq(1,174,1), pospertrend2, type = "l",xlim = c(0,185), ylim = c(-0.5,0.5), ylab = "Positive Percentage", main = "10 Day Positive Percentage Forecast")
-lines(seq(165,174,1), as.data.frame(posperForecasts)$fcst, type = "l", col = "red")
+lines(seq(165,174,1), as.data.frame(posperForecasts10)$fcst, type = "l", col = "red")
 ```
 ```{r}
-ASEvarairplane = mean((pospertrend2[165:174] - posperForecasts[,1])^2)
-ASEvarairplane #0.27
+ASEvarairplane = mean((pospertrend2[165:174] - posperForecasts10[,1])^2)
+ASEvarairplane #0.0021
 ```
 
 
@@ -532,20 +547,22 @@ library(forecast)
 library(vars)
 library(tswge)
 
-us2Small = us2[1:173,]
-us2Large = us2[1:163,]
-us2SmallDF =  data.frame(date = ts(us2Small$date), test = ts(us2Small$totalTestResultsIncrease), positive = ts(us2Small$positiveIncrease))
-us2LargeDF =  data.frame(test = ts(us2Large$totalTestResultsIncrease), positive = ts(us2Large$positiveIncrease))
+us2Small = us2[1:172,]
+us2Large = us2[1:162,]
+us2SmallDF =  data.frame(test = ts(us2Small$totalTestResultsIncrease, frequency = 1), positive = ts(us2Small$positiveIncrease, frequency = 1))
+us2LargeDF =  data.frame(test = ts(us2Large$totalTestResultsIncrease, frequency = 1), positive = ts(us2Large$positiveIncrease, frequency = 1))
 ```
 
 From here, we will fit it into a neural net model.
 
 ```{r}
-fit.mlp.small = mlp(ts(us2Small$posper), allow.det.season = FALSE, reps = 20, comb = 'mean', xreg = us2SmallDF, hd.auto.type = 'valid')
+fit.mlp.small = mlp(ts(us2Small$posper, frequency = 1), allow.det.season = FALSE, reps = 20, comb = 'mean', xreg = us2SmallDF)
+#fit.mlp.small = mlp(ts(us2Small$deathIncrease, frequency = 1), allow.det.season = FALSE, reps = 20, comb = 'mean', xreg = us2SmallDF)
 fit.mlp.small
 plot(fit.mlp.small)
 
-fit.mlp.large = mlp(ts(us2Large$posper), allow.det.season = FALSE, reps = 20, comb = 'mean', xreg = us2LargeDF, hd.auto.type = 'valid')
+fit.mlp.large = mlp(ts(us2Large$posper, frequency = 1), allow.det.season = FALSE, reps = 20, comb = 'mean', xreg = us2LargeDF)
+#fit.mlp.large = mlp(ts(us2Large$deathIncrease, frequency = 1), allow.det.season = FALSE, reps = 20, comb = 'mean', xreg = us2LargeDF)
 fit.mlp.large
 plot(fit.mlp.large)
 ```
@@ -555,8 +572,8 @@ From here we will create a dataframe using the key features of the regressors, a
 
 ```{r}
 USDF = data.frame(test = ts(us2$totalTestResults), positive = ts(us2$positiveIncrease))
-fore.mlp10 = forecast(fit.mlp.small, h = 9, xreg = USDF)
-fore.mlp20 = forecast(fit.mlp.large, h = 19, xreg = USDF)
+fore.mlp10 = forecast(fit.mlp.small, h = 10, xreg = USDF)
+fore.mlp20 = forecast(fit.mlp.large, h = 20, xreg = USDF)
 plot(fore.mlp10)
 plot(fore.mlp20)
 ```
@@ -564,19 +581,39 @@ plot(fore.mlp20)
 Now let's check the ASE of our short term and long term forecast. 
 
 ```{r}
-ASEmlp10 = mean((us2$posper[174:182] - fore.mlp10$mean)^2)
+ASEmlp10 = mean((us2$posper[173:182] - fore.mlp10$mean)^2)
 ASEmlp10
-ASEmlp20 = mean((us2$posper[164:182] - fore.mlp20$mean)^2)
+ASEmlp20 = mean((us2$posper[163:182] - fore.mlp20$mean)^2)
 ASEmlp20
 ```
 
 
 
+# Ensemble Model 
 
+```{r}
+ensemble10 = (preds10stat$fcst$y1[,1] + fore.mlp10$mean)/2
+ensemble20 = (preds20stat$fcst$y1[,1] + fore.mlp20$mean)/2
 
+```
 
+```{r}
+plot(seq(1,182,1), us2$posper, type = "l",xlim = c(0,185), ylim = c(0,0.3), ylab = "Positive Percentage", main = "10 Day Positive Percentage Forecast Ensemble")
+lines(seq(173,182,1), ensemble10, type = "l", col = "red")
 
+plot(seq(1,182,1), us2$posper, type = "l",xlim = c(0,185), ylim = c(0,0.3), ylab = "Positive Percentage", main = "20 Day Positive Percentage Forecast Ensemble")
+lines(seq(163,182,1), ensemble20, type = "l", col = "red")
+```
 
+Ensemble ASE
+
+```{r}
+ASE10 = mean((us2$posper[173:182] - ensemble10)^2)
+ASE10
+
+ASE20 = mean((us2$posper[173:182] - ensemble20)^2)
+ASE20
+```
 
 
 
@@ -888,6 +925,7 @@ To get started, let's look into seeing if there's a lag between other variables 
 ```{r}
 posperas = (as2$positiveIncrease[1:140]/as2$totalTestResultsIncrease[1:140])
 posperas[is.na(posperas)] <- 0
+as2[is.na(as2)] <- 0
 
 ccf(posperas, as2$death) # lag is -18
 ccf(posperas, as2$hospitalizedCurrently) # lag is 0
@@ -927,12 +965,16 @@ Now let's look to see if we can predict the forecast on the var.
 
 
 PosperVAR = VAR(cbind(as2$posper[1:140], as2$totalTestResultsIncrease[1:140], as2$positiveIncrease[1:140]), type = "const", p = 3)
-preds=predict(PosperVAR,n.ahead=10)
+predsar10=predict(PosperVAR,n.ahead=10)
+predsar20=predict(PosperVAR,n.ahead=20)
 ```
 
 ```{r}
-startingPoints = us2$posper[131:140]
-posperForecasts = preds$fcst$y1[,1:4] + startingPoints
+startingPoints10 = us2$posper[131:140]
+posperForecasts10 = predsar10$fcst$y1[,1:4] + startingPoints10
+
+startingPoints20 = us2$posper[121:140]
+posperForecasts20 = predsar20$fcst$y1[,1:4] + startingPoints20
 ```
 
 Now let's plot our findings
@@ -944,7 +986,10 @@ library(RColorBrewer)
 #fanchart(preds, colors = brewer.pal(n = 8, name= 'Blues'))
 
 plot(seq(1,140,1), as2$posper, type = "l",xlim = c(0,145), ylim = c(0,0.6), ylab = "Positive Percentage", main = "10 Day Positive Percentage Forecast")
-lines(seq(131,140,1), as.data.frame(posperForecasts)$fcst, type = "l", col = "red")
+lines(seq(131,140,1), as.data.frame(posperForecasts10)$fcst, type = "l", col = "red")
+
+plot(seq(1,140,1), as2$posper, type = "l",xlim = c(0,145), ylim = c(0,0.6), ylab = "Positive Percentage", main = "10 Day Positive Percentage Forecast")
+lines(seq(121,140,1), as.data.frame(posperForecasts20)$fcst, type = "l", col = "red")
 ```
 
 
@@ -1063,4 +1108,85 @@ print(paste('Aruma(9,1,0)s=7:', ASEas7))
 print(paste('Var Stationary:', ASEavarstat))
 print(paste('Var Trend:', ASEavartrend))
 print(paste('Var Airplane:', ASEavarairplane))
+```
+
+
+# MLP
+
+We will break up our US2 dataset into a training set of 80% and a testing set of 20% which will give us a training set of 146 and a testing set of 36. 
+
+```{r}
+library(nnfor)
+library(forecast)
+library(vars)
+library(tswge)
+
+as2Small = as2[1:130,]
+as2Large = as2[1:120,]
+as2SmallDF =  data.frame(test = ts(as2Small$totalTestResultsIncrease, frequency = 1), positive = ts(as2Small$positiveIncrease, frequency = 1))
+as2LargeDF =  data.frame(test = ts(as2Large$totalTestResultsIncrease, frequency = 1), positive = ts(as2Large$positiveIncrease, frequency = 1))
+```
+
+From here, we will fit it into a neural net model.
+
+```{r}
+fit.mlp.small = mlp(ts(as2Small$posper, frequency = 1), allow.det.season = FALSE, reps = 20, comb = 'mean', xreg = as2SmallDF)
+#fit.mlp.small = mlp(ts(us2Small$deathIncrease, frequency = 1), allow.det.season = FALSE, reps = 20, comb = 'mean', xreg = us2SmallDF)
+fit.mlp.small
+plot(fit.mlp.small)
+
+fit.mlp.large = mlp(ts(as2Large$posper, frequency = 1), allow.det.season = FALSE, reps = 20, comb = 'mean', xreg = as2LargeDF)
+#fit.mlp.large = mlp(ts(us2Large$deathIncrease, frequency = 1), allow.det.season = FALSE, reps = 20, comb = 'mean', xreg = us2LargeDF)
+fit.mlp.large
+plot(fit.mlp.large)
+```
+The MLP output gave us 5 notes and 20 repititions, with two regressors included. 
+
+From here we will create a dataframe using the key features of the regressors, and then forecast against it using a horizon of 10 days. 
+
+```{r}
+ASDF = data.frame(test = ts(as2$totalTestResults), positive = ts(as2$positiveIncrease))
+for.mlp10 = forecast(fit.mlp.small, h = 10, xreg = ASDF)
+fore.mlp20 = forecast(fit.mlp.large, h = 20, xreg = ASDF)
+plot(fore.mlp10)
+plot(fore.mlp20)
+```
+
+Our ASE ranges widely within our 20 repititions. 
+
+Now let's check the ASE of our short term and long term forecast. 
+
+```{r}
+ASEmlp10 = mean((as2$posper[131:140] - fore.mlp10$mean)^2)
+ASEmlp10
+ASEmlp20 = mean((as2$posper[121:140] - fore.mlp20$mean)^2)
+ASEmlp20
+```
+
+
+
+# Ensemble Model 
+
+```{r}
+ensemble10 = (predsar10$fcst$y1[,1] + fore.mlp10$mean)/2
+ensemble20 = (predsar20$fcst$y1[,1] + fore.mlp20$mean)/2
+
+```
+
+```{r}
+plot(seq(1,140,1), as2$posper, type = "l",xlim = c(0,145), ylim = c(0,0.5), ylab = "Positive Percentage", main = "10 Day Positive Percentage Forecast Ensemble")
+lines(seq(131,140,1), ensemble10, type = "l", col = "red")
+
+plot(seq(1,140,1), as2$posper, type = "l",xlim = c(0,145), ylim = c(0,0.5), ylab = "Positive Percentage", main = "20 Day Positive Percentage Forecast Ensemble")
+lines(seq(121,140,1), ensemble20, type = "l", col = "red")
+```
+
+Ensemble ASE
+
+```{r}
+ASE10 = mean((as2$posper[131:140] - ensemble10)^2)
+ASE10
+
+ASE20 = mean((as2$posper[121:140] - ensemble20)^2)
+ASE20
 ```
