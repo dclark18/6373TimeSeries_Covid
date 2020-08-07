@@ -779,10 +779,19 @@ plotts.sample.wge(p.ns)
 We accounted for the wandering behavior with our trend forecast. Which was a low pass filter. 
 
 ```{r}
+acf(p.ns)
 aic5.wge(p.ns, p=0:10, q=0:2) # arima(10,1,2)
 aic5.wge(p.ns, p=0:10, q=0:2, type='bic') #arima(2,1,0)
 ```
+Looking at the ACF of the differenced data, we can see that a couple of the residuals fall out of the 95% confidence intervals, which is not great. However, we can perform the Ljung Box tex test to see how it does. 
 
+```{r}
+ljung.wge(p.ns)
+ljung.wge(p.ns, K = 48)
+```
+Running the Ljung box test, we can see that both p values are below 0.05, which fails to reject the null hypothesis of no white noise.
+
+That said, we will proceed to see how our model performs. 
 
 Running our AIC, we can see that the preferred ARIMA model was (10,1,2) while our BIC preferred (2,1,0), which we will move forward with. 
 
@@ -805,8 +814,8 @@ Here we can see the forecast is going to ascillate back towards the mean because
 Let's confirm for sure by checking the ASE.
 
 ```{r}
-ASEaNS = mean((posperas[(90-20+1):90] - forNS$f)^2)
-ASEaNS
+ASEaNS = mean((p.ns[(90-20+1):90] - forNS$f)^2)
+ASEaNS # 0.0054
 ```
 
 
@@ -818,9 +827,9 @@ ASEHolder = numeric()
 for( i in 1:(81-(trainingSize + horizon) + 1))
 {
   
-  forecasts = fore.aruma.wge(posperas[i:(i+(trainingSize-1))],phi = estp.ns$phi, theta = estp.ns$theta, s = 7, d = 0,n.ahead = horizon)
+  forecasts = fore.aruma.wge(p.ns[i:(i+(trainingSize-1))],phi = estp.ns$phi, theta = estp.ns$theta, s = 7, d = 0,n.ahead = horizon)
   
-  ASE = mean((posperas[(trainingSize+i):(trainingSize+ i + (horizon) - 1)] - forecasts$f)^2)
+  ASE = mean((p.ns[(trainingSize+i):(trainingSize+ i + (horizon) - 1)] - forecasts$f)^2)
          
   ASEHolder[i] = ASE
 
@@ -842,6 +851,15 @@ Let's now look to account for the possible seasonality as well as a trend to see
 y=artrans.wge(posperas, phi.tr=c(0,0,0,0,0,0,1))
 y_difTwice=artrans.wge(p.ns, phi.tr=c(0,0,0,0,0,0,1))
 ```
+We can check the white noise with the ACF on trend and seasonal differenced data. 
+
+```{r}
+acf(y_difTwice)
+ljung.wge(y_difTwice)
+ljung.wge(y_difTwice, K = 48)
+```
+Here we can see that we have residuals exceeding our confidence limits and our ljung box test rejects the hypothesis that our model is just white noise. 
+
 
 
 Now let's check the AIC of the trend and seasonal models. 
@@ -863,8 +881,8 @@ The preferred estimated model is
 (1 + 0.93B + 0.78B^2 + 0.45B^3 + 0.56B^4 + 0.55B^5 + 0.22B^6 + 0.44B^7 + 0.23B^8 - 0.02B^9 - 0.49B^10 - 0.36B^11)(1 - B^7)(1 - B) = a_t
 
 ```{r}
-fore.aruma.wge(posperas,phi=esty$phi, theta=esty$theta, d=1,s=7,n.ahead=20, lastn=FALSE, plot=TRUE)
-forS7 = fore.aruma.wge(posperas,phi=esty$phi, theta=esty$theta, d=1,s=7,n.ahead=20, lastn=TRUE, plot=TRUE)
+fore.aruma.wge(y_difTwice,phi=esty$phi, theta=esty$theta, d=1,s=7,n.ahead=20, lastn=FALSE, plot=TRUE)
+forS7 = fore.aruma.wge(y_difTwice,phi=esty$phi, theta=esty$theta, d=1,s=7,n.ahead=20, lastn=TRUE, plot=TRUE)
 ```
 
 The seasonal and trend forecast does seem to pass the visual test with our cycling being captured and the trend looking like it's starting to dip back down. 
@@ -872,7 +890,7 @@ The seasonal and trend forecast does seem to pass the visual test with our cycli
 Let's check for certain with the ASE.
 
 ```{r}
-ASEas7 = mean((posperas[(90-20+1):90] - forS7$f)^2)
+ASEas7 = mean((y_difTwice[(83-20+1):83] - forS7$f)^2)
 ASEas7
 ```
 
@@ -884,9 +902,9 @@ ASEHolder = numeric()
 for( i in 1:(81-(trainingSize + horizon) + 1))
 {
   
-  forecasts = fore.aruma.wge(posperas[i:(i+(trainingSize-1))],phi = esty$phi, theta = esty$theta, s = 7, d = 1,n.ahead = horizon)
+  forecasts = fore.aruma.wge(y_difTwice[i:(i+(trainingSize-1))],phi = esty$phi, theta = esty$theta, s = 7, d = 1,n.ahead = horizon)
   
-  ASE = mean((posperas[(trainingSize+i):(trainingSize+ i + (horizon) - 1)] - forecasts$f)^2)
+  ASE = mean((y_difTwice[(trainingSize+i):(trainingSize+ i + (horizon) - 1)] - forecasts$f)^2)
          
   ASEHolder[i] = ASE
 
@@ -944,6 +962,8 @@ Looking at the CCFs of positive percentage with other key variables, we can see 
 as2[is.na(as2)] <- 0
 ```
 
+For a cleaning standpoint and to allow our models to run, we will make sure that our NAs are converted to 0s. 
+
 ```{r}
 library(vars)
 as2$posper = posperas
@@ -955,7 +975,7 @@ BSVar1 # AIC was 2.38e01 for p =3
 ```
 
 
-Running a var that accounts for the lags between positive percentage, deaths, numbers of people in the ICU, the number of hospitalized patients, number of people on ventilators, number of positives, number of negatives and total test results, we can see that accounting for all the lags the preferred AIC is a p of 10 at an AIC of 3.58e+01.
+Running a var that accounts for the lags between positive percentage, deaths, numbers of people in the ICU, the number of hospitalized patients, number of people on ventilators, number of positives, number of negatives and total test results, we can see that accounting for all the lags the preferred AIC is a p of 3 at an AIC of 3.79e+01.
 
 Now let's look to see if we can predict the forecast on the var. 
 
@@ -969,6 +989,8 @@ predsar10=predict(PosperVAR,n.ahead=10)
 predsar20=predict(PosperVAR,n.ahead=20)
 ```
 
+To run our VAR model, we will need to ensure that our test results and positive increase variables are both working off of a 140 row dataframe using the p of 3 to run our var against. Next we will predict against a 10 day and 20 day horizon as our short term and long term forecast. 
+
 ```{r}
 startingPoints10 = us2$posper[131:140]
 posperForecasts10 = predsar10$fcst$y1[,1:4] + startingPoints10
@@ -977,7 +999,7 @@ startingPoints20 = us2$posper[121:140]
 posperForecasts20 = predsar20$fcst$y1[,1:4] + startingPoints20
 ```
 
-Now let's plot our findings
+Here we will create two separate predictor variables against our VAR stationary model for the 10 and 20 day horizon. 
 
 ```{r}
 #dev.off()
@@ -988,17 +1010,17 @@ library(RColorBrewer)
 plot(seq(1,140,1), as2$posper, type = "l",xlim = c(0,145), ylim = c(0,0.6), ylab = "Positive Percentage", main = "10 Day Positive Percentage Forecast")
 lines(seq(131,140,1), as.data.frame(posperForecasts10)$fcst, type = "l", col = "red")
 
-plot(seq(1,140,1), as2$posper, type = "l",xlim = c(0,145), ylim = c(0,0.6), ylab = "Positive Percentage", main = "10 Day Positive Percentage Forecast")
+plot(seq(1,140,1), as2$posper, type = "l",xlim = c(0,145), ylim = c(0,0.6), ylab = "Positive Percentage", main = "20 Day Positive Percentage Forecast")
 lines(seq(121,140,1), as.data.frame(posperForecasts20)$fcst, type = "l", col = "red")
 ```
 
 
 
-Using the Var forecast including death, hospitalized patients, patients on ventilators and patients in ICU, we can see that the prediction over emphasize the spike that would happen between observations 172 - 182. Lets check the ASE to see how we did. 
+Using the Var forecast including death, hospitalized patients, patients on ventilators and patients in ICU, we can see that the prediction over Seemed to expect the spikes from 100 to 125 to continue, which it did not in actuality. THe forecasts for the short term and long term trends both seemed to be problematic in the same way. 
 
 ```{r}
 ASEavarstat = mean((as2$posper[131:140] - posperForecasts[,1])^2)
-ASEavarstat #0.018
+ASEavarstat #0.064
 ```
 
 Now lets do a var assuming a trend model (which ended up being the best in a univariate study)
@@ -1010,7 +1032,7 @@ pospertrend = artrans.wge(as2$posper, 1)
 testresultstrends = artrans.wge(as2$totalTestResultsIncrease, 1)
 positivetesttrend = artrans.wge(as2$positiveIncrease, 1)
 ```
-
+Here, we will need to difference the two variables we included in the stationary VAR model as well as the positive percentage. 
 
 Now that we have differenced variables, lets see which gives us the best AIC score
 
@@ -1019,19 +1041,25 @@ BSVar1 = VARselect(cbind(pospertrend[1:139], testresultstrends[1:139], positivet
 BSVar1 # AIC was 2.39e01 for p =9
 ```
 
-Like the earlier model, we end up with an AIC preference of 20. 
+Like the earlier model, we end up with an AIC preference of 9. 
 
 ```{r}
 PosperVAR = VAR(cbind(pospertrend[1:139], testresultstrends[1:139], positivetesttrend[1:139]), type = "const", p = 9)
-preds=predict(PosperVAR,n.ahead=10)
+predstrend10=predict(PosperVAR,n.ahead=10)
+predstrend20=predict(PosperVAR,n.ahead=20)
 ```
-
+ LIke previously, we will run a VAR in the test results, positive test trend and pospertrend within the observations 1-139. Additionally, we will be looking at a horizon of 10 and 20. 
 
 
 ```{r}
-startingPoints = pospertrend[130:139]
-posperForecasts = preds$fcst$y1[,1:3] + startingPoints
+startingPoints10 = pospertrend[130:139]
+posperForecasts10 = predstrend10$fcst$y1[,1:3] + startingPoints10
+
+startingPoints20 = pospertrend[120:139]
+posperForecasts20 = predstrend20$fcst$y1[,1:3] + startingPoints20
 ```
+
+This will set up our trend forecasts from the 10 day to 20 day horizon so that we can plot them. 
 
 
 ```{r}
@@ -1041,18 +1069,24 @@ library(RColorBrewer)
 #fanchart(preds, colors = brewer.pal(n = 8, name= 'Blues'))
 
 plot(seq(1,139,1), pospertrend, type = "l",xlim = c(0,145), ylim = c(-0.5,0.5), ylab = "Positive Percentage", main = "10 Day Positive Percentage Forecast")
-lines(seq(130,139,1), as.data.frame(posperForecasts)$fcst, type = "l", col = "red")
-```
+lines(seq(130,139,1), as.data.frame(posperForecasts10)$fcst, type = "l", col = "red")
 
+plot(seq(1,139,1), pospertrend, type = "l",xlim = c(0,145), ylim = c(-0.5,0.5), ylab = "Positive Percentage", main = "20 Day Positive Percentage Forecast")
+lines(seq(120,139,1), as.data.frame(posperForecasts20)$fcst, type = "l", col = "red")
+```
+ Our VAR forecast using a trend model did a really good job of capturing the seasonality trend in the 10 and 20 day forecast. It seemed to capture perfectly some of the spikes from 135 to 139 and 125 - 130. This was apparent in the 10 and 20 day forecast. 
 
 
 
 ```{r}
-ASEavartrend = mean((pospertrend[130:139] - posperForecasts[,1])^2)
+ASEavartrend = mean((pospertrend[130:139] - posperForecasts10[,1])^2)
 ASEavartrend #0.0017
+
+ASEavartrend20 = mean((pospertrend[120:139] - posperForecasts20[,1])^2)
+ASEavartrend20 #0.0017
 ```
 
-We can see with a trend model, we get a better ASE than than the stationary model we ran previously. 
+We can see with a trend model, we get a better ASE than than the stationary model we ran previously. Both our 10 and 20 day ASEs had strong scores which were better than anything we achieved previously. 
 
 Now lets try a seasonal model accounting for 7 days on top of the trend data we previously ran. 
 
@@ -1061,26 +1095,34 @@ pospertrend2 = artrans.wge(pospertrend, c(rep(0,6),1))
 testresultstrends2 = artrans.wge(testresultstrends, c(rep(0,6),1))
 positivetesttrend2 = artrans.wge(positivetesttrend, c(rep(0,6),1))
 ```
-
+Here we add a 7 day seasonality to our trend forecast so that our models take on an Airline like model. Looking at our transformed realization, there doesn't seem to be a major difference, which suggests that we would probably not see an improved performance to our trend model. 
 
 ```{r}
 BSVar1 = VARselect(cbind(pospertrend2[1:132], testresultstrends2[1:132], positivetesttrend2[1:132]), type = 'both', lag.max = 10)
 BSVar1 # AIC was 2.41e01 for p =9
 ```
-
-
-
-```{r}
-PosperVAR = VAR(cbind(pospertrend[1:132], testresultstrends[1:132], positivetesttrend[1:132]), type = "const", p = 9)
-preds=predict(PosperVAR,n.ahead=10)
-```
-
+Like previously, we found that that the AIC gave us a p of 9 with a top AIC score of 2.41. 
 
 
 ```{r}
-startingPoints = pospertrend2[123:132]
-posperForecasts = preds$fcst$y1[,1:3] + startingPoints
+PosperVAR = VAR(cbind(pospertrend2[1:132], testresultstrends2[1:132], positivetesttrend2[1:132]), type = "const", p = 9)
+preds10=predict(PosperVAR,n.ahead=10)
+
+preds20=predict(PosperVAR,n.ahead=20)
 ```
+
+Next we will run our var forecasts against our 3 variables that were trend and seasonally differenced at a p = 9. 
+
+
+```{r}
+startingPoints10 = pospertrend2[123:132]
+posperForecasts10 = preds10$fcst$y1[,1:3] + startingPoints10
+
+startingPoints20 = pospertrend2[113:132]
+posperForecasts20 = preds20$fcst$y1[,1:3] + startingPoints20
+```
+
+Here we will prepare our 10 and 20 day forecast to plot and measure ASE. 
 
 
 ```{r}
@@ -1090,14 +1132,22 @@ library(RColorBrewer)
 #fanchart(preds, colors = brewer.pal(n = 8, name= 'Blues'))
 
 plot(seq(1,132,1), pospertrend2, type = "l",xlim = c(0,140), ylim = c(-0.5,0.5), ylab = "Positive Percentage", main = "10 Day Positive Percentage Forecast")
-lines(seq(123,132,1), as.data.frame(posperForecasts)$fcst, type = "l", col = "red")
-```
+lines(seq(123,132,1), as.data.frame(posperForecasts10)$fcst, type = "l", col = "red")
 
+plot(seq(1,132,1), pospertrend2, type = "l",xlim = c(0,140), ylim = c(-0.5,0.5), ylab = "Positive Percentage", main = "20 Day Positive Percentage Forecast")
+lines(seq(113,132,1), as.data.frame(posperForecasts20)$fcst, type = "l", col = "red")
+```
+From our 10 and 20 day forecast, we can see that our seasonality over emphasized the spikes that took place at 110 to build it's forecast for the days to come after.
 
 ```{r}
-ASEavarairplane = mean((pospertrend2[123:132] - posperForecasts[,1])^2)
-ASEavarairplane #0.0030
+ASEavarairplane = mean((pospertrend2[123:132] - posperForecasts10[,1])^2)
+ASEavarairplane #0.014
+
+ASEavarairplane20 = mean((pospertrend2[113:132] - posperForecasts20[,1])^2)
+ASEavarairplane20 #0.009
 ```
+
+In doing so, we can see that it led to one of the poorest ASE scores that we came across. 
 
 
 ```{r}
@@ -1110,10 +1160,13 @@ print(paste('Var Trend:', ASEavartrend))
 print(paste('Var Airplane:', ASEavarairplane))
 ```
 
+So far we can see that our bsest performing model thus far was a Var model that accounted for a trend in the analysis. This is a bit of a disconnect from our Fore Arma model forecasts that chose the stationary model as the top performer. That said, looking at the ARMA models and the VAR models together, the Trend forecast models had the lowest average. 
 
 # MLP
 
-We will break up our US2 dataset into a training set of 80% and a testing set of 20% which will give us a training set of 146 and a testing set of 36. 
+Since our trend model was the best overall performer across our ARMA forecasts and Var forecasts, we will do an MLP of our trend forecast. 
+
+We will break up our US2 dataset into two separate horizons at 10 days and 20 days and then we will difference such that you can build a trend. 
 
 ```{r}
 library(nnfor)
@@ -1123,70 +1176,87 @@ library(tswge)
 
 as2Small = as2[1:130,]
 as2Large = as2[1:120,]
-as2SmallDF =  data.frame(test = ts(as2Small$totalTestResultsIncrease, frequency = 1), positive = ts(as2Small$positiveIncrease, frequency = 1))
-as2LargeDF =  data.frame(test = ts(as2Large$totalTestResultsIncrease, frequency = 1), positive = ts(as2Large$positiveIncrease, frequency = 1))
+pospersmall = artrans.wge(as2Small$posper, phi.tr=(1))
+testresultssmall = artrans.wge(as2Small$totalTestResultsIncrease, phi.tr=(1))
+positivesmall = artrans.wge(as2Small$positiveIncrease, phi.tr=(1))
+posperlarge = artrans.wge(as2Large$posper, phi.tr=(1))
+testresultslarge = artrans.wge(as2Large$totalTestResultsIncrease, phi.tr=(1))
+positivelarge = artrans.wge(as2Large$positiveIncrease, phi.tr=(1))
+as2SmallDF =  data.frame(test = ts(testresultssmall, frequency = 1), positive = ts(positivesmall, frequency = 1))
+as2LargeDF =  data.frame(test = ts(testresultslarge, frequency = 1), positive = ts(positivelarge, frequency = 1))
 ```
+In doing so, we will also difference positive percentage, test results increase and positive increase so that we have a trend. We will separate our variabiles into small and large forecasts. 
 
 From here, we will fit it into a neural net model.
 
 ```{r}
-fit.mlp.small = mlp(ts(as2Small$posper, frequency = 1), allow.det.season = FALSE, reps = 20, comb = 'mean', xreg = as2SmallDF)
+fit.mlp.small = mlp(ts(pospersmall, frequency = 1), allow.det.season = FALSE, reps = 20, comb = 'mean', xreg = as2SmallDF)
 #fit.mlp.small = mlp(ts(us2Small$deathIncrease, frequency = 1), allow.det.season = FALSE, reps = 20, comb = 'mean', xreg = us2SmallDF)
 fit.mlp.small
 plot(fit.mlp.small)
 
-fit.mlp.large = mlp(ts(as2Large$posper, frequency = 1), allow.det.season = FALSE, reps = 20, comb = 'mean', xreg = as2LargeDF)
+fit.mlp.large = mlp(ts(posperlarge, frequency = 1), allow.det.season = FALSE, reps = 20, comb = 'mean', xreg = as2LargeDF)
 #fit.mlp.large = mlp(ts(us2Large$deathIncrease, frequency = 1), allow.det.season = FALSE, reps = 20, comb = 'mean', xreg = us2LargeDF)
 fit.mlp.large
 plot(fit.mlp.large)
 ```
-The MLP output gave us 5 notes and 20 repititions, with two regressors included. 
+The MLP output gave us 5 notes and 20 repititions, with two regressors included. It did the same for both the short term and long term forecast. 
 
 From here we will create a dataframe using the key features of the regressors, and then forecast against it using a horizon of 10 days. 
 
 ```{r}
-ASDF = data.frame(test = ts(as2$totalTestResults), positive = ts(as2$positiveIncrease))
-for.mlp10 = forecast(fit.mlp.small, h = 10, xreg = ASDF)
+testdif = artrans.wge(as2$totalTestResults, phi.tr=(1))
+posdif = artrans.wge(as2$positiveIncrease, phi.tr=(1))
+ASDF = data.frame(test = ts(testdif), positive = ts(posdif))
+fore.mlp10 = forecast(fit.mlp.small, h = 10, xreg = ASDF)
 fore.mlp20 = forecast(fit.mlp.large, h = 20, xreg = ASDF)
 plot(fore.mlp10)
 plot(fore.mlp20)
 ```
 
-Our ASE ranges widely within our 20 repititions. 
+Within our 20 repetitions, we can see that our 10 day and 20 day MLP seemed to pass the eye test of continuing the data that appears before it.
 
 Now let's check the ASE of our short term and long term forecast. 
 
 ```{r}
-ASEmlp10 = mean((as2$posper[131:140] - fore.mlp10$mean)^2)
-ASEmlp10
-ASEmlp20 = mean((as2$posper[121:140] - fore.mlp20$mean)^2)
-ASEmlp20
+posperdif = artrans.wge(as2$posper, phi.tr=(1))
+ASEmlp10 = mean((posperdif[130:139] - fore.mlp10$mean)^2)
+ASEmlp10 #0.0077
+ASEmlp20 = mean((posperdif[120:139] - fore.mlp20$mean)^2)
+ASEmlp20 #0.0076
 ```
-
+Our ASE of the MLP model seemed to be comparable to the trend models that we saw previously. As both were in the 0.001 to 0.007 range. 
 
 
 # Ensemble Model 
 
+Since our trend differenced ARMA and Var models did the best and informed our MLP model, we will use the two to inform our ensemble model to see if it does better than 0.001 in ASE. 
+
 ```{r}
-ensemble10 = (predsar10$fcst$y1[,1] + fore.mlp10$mean)/2
-ensemble20 = (predsar20$fcst$y1[,1] + fore.mlp20$mean)/2
+ensemble10 = (predstrend10$fcst$y1[,1] + fore.mlp10$mean)/2
+ensemble20 = (predstrend20$fcst$y1[,1] + fore.mlp20$mean)/2
 
 ```
 
 ```{r}
-plot(seq(1,140,1), as2$posper, type = "l",xlim = c(0,145), ylim = c(0,0.5), ylab = "Positive Percentage", main = "10 Day Positive Percentage Forecast Ensemble")
-lines(seq(131,140,1), ensemble10, type = "l", col = "red")
+plot(seq(1,139,1), pospertrend, type = "l",xlim = c(0,145), ylim = c(-0.5,0.5), ylab = "Positive Percentage", main = "10 Day Positive Percentage Forecast Ensemble")
+lines(seq(130,139,1), ensemble10, type = "l", col = "red")
 
-plot(seq(1,140,1), as2$posper, type = "l",xlim = c(0,145), ylim = c(0,0.5), ylab = "Positive Percentage", main = "20 Day Positive Percentage Forecast Ensemble")
-lines(seq(121,140,1), ensemble20, type = "l", col = "red")
+plot(seq(1,139,1), pospertrend, type = "l",xlim = c(0,145), ylim = c(-0.5,0.5), ylab = "Positive Percentage", main = "20 Day Positive Percentage Forecast Ensemble")
+lines(seq(120,139,1), ensemble20, type = "l", col = "red")
 ```
+Our ensemble model of the mlp and the var appeared to split the difference a bit between our model that captured the spikes really well to one that showed consistent oscillating trend to zero. 
+
 
 Ensemble ASE
 
 ```{r}
-ASE10 = mean((as2$posper[131:140] - ensemble10)^2)
-ASE10
+ASE10 = mean((pospertrend[130:139] - ensemble10)^2)
+ASE10 # 0.008
 
-ASE20 = mean((as2$posper[121:140] - ensemble20)^2)
-ASE20
+ASE20 = mean((pospertrend[120:139] - ensemble20)^2)
+ASE20 #0.006
 ```
+
+Our Ensemble Model did not improve upon our Var trend model forecast which garnered an ASE of 0.001. Here, we did significantly higher at 0.008 and 0.006 respectively. 
+
